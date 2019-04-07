@@ -1,16 +1,73 @@
 #include <iostream>
+#include <fstream>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
 #include <boost/program_options.hpp>
-using namespace std;
+#include <regex>
 
-void parse_args(int argc, const char *argv[]) {
+using namespace std;
+namespace po = boost::program_options;
+
+enum Version { sliding, pathfinding};
+struct Program_spec{
+    Version version;
+    ifstream in;
+    ofstream out;
+//    Program_spec(Version version, ifstream in, ofstream out):version(version),in(in),out(out){};
+};
+struct Slide {
+    int number;
+    bool empty;
+};
+void parse_args(int argc, const char *argv[], Program_spec& program_spec) {
     po::options_description desc{"Options"};
     try {
-//        desc.ad
+        desc.add_options()
+//                ("help", "./astar_gpu --version (sliding|pathfinding) --input-data <PATH> --output-data <PATH>")
+                ("version", po::value<std::string>(), "You have to specify version")
+                ("input_data", po::value<std::string>())
+                ("output_data", po::value<std::string>());
+        po::variables_map vm;
+        store(po::parse_command_line(argc, argv, desc), vm);
+        po::notify(vm);
+        if (vm.count("help")) {
+            std::cout << desc << '\n';
+            exit(0);
+        }
+        string version = vm["version"].as<string>();
+        string input_file = vm["input_data"].as<string>();
+        string output_file = vm["output_data"].as<string>();
+
+        program_spec.in.open(input_file);
+        program_spec.out.open(output_file);
+        program_spec.version = version == "sliding" ? sliding : pathfinding;
+    }
+    catch (const po::error &ex)
+    {
+        std::cerr << ex.what() << '\n';
+    }
+    catch (...) {
+        std::cerr << desc << '\n';
     }
 }
+void read_slides(ifstream &in, Slide *slides, int& len) {
+    string s;
+    getline(in,s);
+
+    smatch m;
+    regex e ("_|[0-9]+");
+
+    while (regex_search (s,m,e)) {
+        for (auto x:m) std::cout << x << " ";
+        std::cout << std::endl;
+//        s = m.suffix().str();
+    }
+}
+
 int main(int argc, const char *argv[]) {
-    cout << "Hello, World!";
-    return 0;
+    Program_spec result;
+    parse_args(argc, argv, result);
+    int d;
+    read_slides(result.in, nullptr, d);
+
 }

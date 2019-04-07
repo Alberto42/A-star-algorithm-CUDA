@@ -3,6 +3,7 @@
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
 #include <boost/program_options.hpp>
+#include <regex>
 
 using namespace std;
 namespace po = boost::program_options;
@@ -14,6 +15,11 @@ struct Program_spec{
     ofstream out;
 //    Program_spec(Version version, ifstream in, ofstream out):version(version),in(in),out(out){};
 };
+//struct Slide {
+//    int number;
+//    bool empty;
+//    Slide(int number, bool empty):number(number),empty(empty){}
+//};
 void parse_args(int argc, const char *argv[], Program_spec& program_spec) {
     po::options_description desc{"Options"};
     try {
@@ -45,12 +51,27 @@ void parse_args(int argc, const char *argv[], Program_spec& program_spec) {
         std::cerr << desc << '\n';
     }
 }
+void read_slides(ifstream &in, int *slides, int& len) {
+    string s;
+    getline(in,s);
+
+    smatch m;
+    regex e ("_|[0-9]+");
+    len = 0;
+    while (regex_search (s,m,e)) {
+        for (auto x:m) {
+            slides[len++] = x == "_" ? -1 : stoi(x);
+        }
+        s = m.suffix().str();
+    }
+}
 
 int main(int argc, const char *argv[]) {
     Program_spec result;
     parse_args(argc, argv, result);
-    cout << result.version << endl;
-    int d;
-    result.in >> d;
-    result.out << d;
+    int len,slides[1000];
+    read_slides(result.in, slides, len);
+    for(int i=0;i<len;i++)
+        cout<<slides[i]<<endl;
+
 }
