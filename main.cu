@@ -38,29 +38,30 @@ struct PriorityQueue {
         return i*2;
     }
     int right(int i) {
-        return i+2 + 1;
+        return i*2 + 1;
     }
     void maxHeapify(int i) {
         int l = left(i);
         int r = right(i);
-        int largest;
-        if (l <= heapSize && A[l] > A[i]) {
-            largest = l;
+        int smallest;
+        if (l <= heapSize && A[l] < A[i]) {
+            smallest = l;
         } else {
-            largest = i;
+            smallest = i;
         }
-        if (r <= heapSize && A[r] > A[largest])
-            largest = r;
-        if (largest != i) {
-            swap(A[i],A[largest]);
-            maxHeapify(largest);
+        if (r <= heapSize && A[r] < A[smallest])
+            smallest = r;
+        if (smallest != i) {
+            swap(A[i],A[smallest]);
+            maxHeapify(smallest);
         }
     }
     void insert(State s) {
+        assert(heapSize < PRIORITY_QUEUE_SIZE);
         heapSize++;
         A[heapSize] = s;
         int i=heapSize;
-        while(i > 1 && A[parent(i)] < A[i]) {
+        while(i > 1 && A[parent(i)] > A[i]) {
             swap(A[i],A[parent(i)]);
             i = parent(i);
         }
