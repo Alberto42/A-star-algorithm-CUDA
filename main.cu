@@ -8,6 +8,72 @@
 using namespace std;
 namespace po = boost::program_options;
 
+const int MAX_SLIDES_COUNT = 25;
+const int PRIORITY_QUEUE_SIZE = 100;
+int slidesCount;
+struct Vertex {
+    int slides[MAX_SLIDES_COUNT];
+    Vertex(int slides[]) {
+        memcpy(this->slides,slides, MAX_SLIDES_COUNT * sizeof(int));
+    }
+};
+struct State {
+    Vertex node;
+    int g,f;
+    State *prev;
+};
+bool operator<(const State &a, const State &b) {return a.f < b.f;}
+bool operator>(const State &a, const State &b) {return a.f > b.f;}
+
+struct PriorityQueue {
+    State A[PRIORITY_QUEUE_SIZE];
+    int heapSize = 0;
+    int parent(int i) {
+        return i/2;
+    }
+    int left(int i) {
+        return i*2;
+    }
+    int right(int i) {
+        return i+2 + 1;
+    }
+    void maxHeapify(int i) {
+        int l = left(i);
+        int r = right(i);
+        int largest;
+        if (l <= heapSize && A[l] > A[i]) {
+            largest = l;
+        } else {
+            largest = i;
+        }
+        if (r <= heapSize && A[r] > A[largest])
+            largest = r;
+        if (largest != i) {
+            swap(A[i],A[largest]);
+            maxHeapify(largest);
+        }
+    }
+    void insert(State s) {
+        heapSize++;
+        A[heapSize] = s;
+        int i=heapSize;
+        while(i > 1 && A[parent(i)] < A[i]) {
+            swap(A[i],A[parent(i)]);
+            i = parent(i);
+        }
+    }
+    State pop() {
+        assert(heapSize > 0);
+        State max = A[1];
+        A[1] = A[heapSize];
+        heapSize--;
+        maxHeapify(1);
+        return max;
+    }
+    bool empty() {
+        return heapSize > 0;
+    }
+};
 enum Version { sliding, pathfinding};
 struct Program_spec{
     Version version;
@@ -15,16 +81,10 @@ struct Program_spec{
     ofstream out;
 //    Program_spec(Version version, ifstream in, ofstream out):version(version),in(in),out(out){};
 };
-//struct Slide {
-//    int number;
-//    bool empty;
-//    Slide(int number, bool empty):number(number),empty(empty){}
-//};
 void parse_args(int argc, const char *argv[], Program_spec& program_spec) {
     po::options_description desc{"Options"};
     try {
         desc.add_options()
-//                ("help", "./astar_gpu --version (sliding|pathfinding) --input-data <PATH> --output-data <PATH>")
                 ("version", po::value<std::string>(), "You have to specify version")
                 ("input_data", po::value<std::string>())
                 ("output_data", po::value<std::string>());
@@ -66,12 +126,24 @@ void read_slides(ifstream &in, int *slides, int& len) {
     }
 }
 
-int main(int argc, const char *argv[]) {
+__global__ void kernel(Vertex* start) {
+
+}
+void main2(int argc, const char *argv[]) {
     Program_spec result;
     parse_args(argc, argv, result);
-    int len,slides[1000];
-    read_slides(result.in, slides, len);
-    for(int i=0;i<len;i++)
-        cout<<slides[i]<<endl;
+    int slides[MAX_SLIDES_COUNT];
+    read_slides(result.in, slides, slidesCount);
+    Vertex start(slides);
 
+    Vertex* devStart;
+    cudaMalloc(&devStart, sizeof(Vertex));
+
+    cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice);
+    kernel<<<1,1>>>(devStart);
+    cudaFree(devStart);
+}
+
+int main(int argc, const char *argv[]) {
+    main2(argc, argv);
 }
