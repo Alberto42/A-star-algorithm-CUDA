@@ -16,17 +16,20 @@ struct Vertex {
     Vertex(int slides[]) {
         memcpy(this->slides,slides, MAX_SLIDES_COUNT * sizeof(int));
     }
+    Vertex(){}
 };
 struct State {
     Vertex node;
     int g,f;
     State *prev;
+    State(){}
 };
 bool operator<(const State &a, const State &b) {return a.f < b.f;}
 bool operator>(const State &a, const State &b) {return a.f > b.f;}
 
 struct PriorityQueue {
     State A[PRIORITY_QUEUE_SIZE];
+    PriorityQueue(){}
     int heapSize = 0;
     int parent(int i) {
         return i/2;
