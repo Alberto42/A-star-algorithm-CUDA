@@ -10,6 +10,8 @@ namespace po = boost::program_options;
 
 const int MAX_SLIDES_COUNT = 25;
 const int PRIORITY_QUEUE_SIZE = 100;
+const int MAX_S_SIZE = 100;
+const int INF = 1000000000;
 int slidesCount;
 struct Vertex {
     int slides[MAX_SLIDES_COUNT];
@@ -18,11 +20,19 @@ struct Vertex {
     }
     Vertex(){}
 };
+bool operator==(const Vertex& a, const Vertex& b) {
+    for(int i=0;i<slidesCount;i++) {
+        if (a[i] != b[i])
+            return false;
+    }
+    return true;
+}
 struct State {
     Vertex node;
     int g,f;
     State *prev;
     State(){}
+    State(int f):f(f){}
 };
 bool operator<(const State &a, const State &b) {return a.f < b.f;}
 bool operator>(const State &a, const State &b) {return a.f > b.f;}
@@ -130,7 +140,32 @@ void read_slides(ifstream &in, int *slides, int& len) {
     }
 }
 
-__global__ void kernel(Vertex* start) {
+__shared__ State m;
+__global__ void kernel(Vertex* start, Vertex* target) {
+    PriorityQueue q;
+    State s[MAX_S_SIZE];
+    int sSize = 0;
+
+    int id = threadIdx.x + blockIdx.x;
+    if (id == 0) {
+        q.insert(*start);
+        m = State(INF);
+    }
+    __syncthreads();
+    while(true) {
+        sSize = 0;
+        if (q.empty() == true) {
+            continue;
+        }
+        State qi = q.pop();
+        if (qi.node == *target) {
+            while (qi.f < m.f) {
+//                atomicExch(&m, qi)
+                m = qi;
+            }
+        }
+
+    }
 
 }
 void main2(int argc, const char *argv[]) {
