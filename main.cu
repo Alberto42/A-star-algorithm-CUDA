@@ -8,11 +8,14 @@
 using namespace std;
 namespace po = boost::program_options;
 
+const int BLOCKS_COUNT = 1;
+const int THREADS_PER_BLOCK_COUNT = 1;
+const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT
 const int MAX_SLIDES_COUNT = 25;
 const int PRIORITY_QUEUE_SIZE = 100;
 const int MAX_S_SIZE = 100;
 const int INF = 1000000000;
-int slidesCount;
+int slidesCount, slidesCountSqrt;
 struct Vertex {
     int slides[MAX_SLIDES_COUNT];
     Vertex(int slides[]) {
@@ -22,7 +25,7 @@ struct Vertex {
 };
 bool operator==(const Vertex& a, const Vertex& b) {
     for(int i=0;i<slidesCount;i++) {
-        if (a[i] != b[i])
+        if (a.slides[i] != b.slides[i])
             return false;
     }
     return true;
@@ -139,8 +142,33 @@ void read_slides(ifstream &in, int *slides, int& len) {
         s = m.suffix().str();
     }
 }
+void expand(State qi, State s[],int &sSize) {
+    int moves = [-1,1, -slidesCountSqrt, slidesCountSqrt];
+    const int movesCount = 4;
+    int empty = -1;
+    int *slides = qi.node.slides;
+    for(int i=0;i<slidesCount;i++)
+        if (slides[i] == -1) {
+            empty = i;
+            break;
+        }
+    if (empty == -1)
+        throw std::exception("empty slide not found");
+    for(int i=0;i<movesCount;i++) {
+        int move = empty + moves[i];
+        if (move < 0 || move >= slidesCount)
+            continue;
+        State sTmp = qi;
+        sTmp.g = qi.g + 1;
+        // fixme
+        swap(sTmp.node.slides[empty],sTmp.node.slides[move]);
+        assert(sSize < MAX_S_SIZE);
+        s[sSize++] = sTmp;
+    }
+}
 
-__shared__ State m;
+__shared__ int m; //id in qi
+__shared__ State qi[THREADS_COUNT+1];
 __global__ void kernel(Vertex* start, Vertex* target) {
     PriorityQueue q;
     State s[MAX_S_SIZE];
@@ -149,40 +177,54 @@ __global__ void kernel(Vertex* start, Vertex* target) {
     int id = threadIdx.x + blockIdx.x;
     if (id == 0) {
         q.insert(*start);
-        m = State(INF);
+        qi[THREADS_COUNT] = State(INF);
+        m = THREADS_COUNT;
     }
     __syncthreads();
     while(true) {
         sSize = 0;
-        if (q.empty() == true) {
+        if (q.empty()) {
             continue;
         }
-        State qi = q.pop();
-        if (qi.node == *target) {
-            while (qi.f < m.f) {
-//                atomicExch(&m, qi)
-                m = qi;
+        qi[id] = q.pop();
+
+        if (qi[id].node == *target) {
+            int idm = id;
+            while (qi[idm].f < qi[m].f) {
+                idm = atomicExch(&m, idm);
             }
         }
-
+        expand(qi[id],s,sSize);
     }
 
+}
+void calcSlidesCountSqrt() {
+    for(int i=1;i<slidesCount;i++) {
+        if (i*i == slidesCount) {
+            slidesCountSqrt = i;
+            break;
+        }
+        if (i == slidesCount -1) {
+            throw std::exception("Wrong slides count");
+        }
+    }
 }
 void main2(int argc, const char *argv[]) {
     Program_spec result;
     parse_args(argc, argv, result);
     int slides[MAX_SLIDES_COUNT];
     read_slides(result.in, slides, slidesCount);
+    calcSlidesCountSqrt();
     Vertex start(slides);
 
     Vertex* devStart;
     cudaMalloc(&devStart, sizeof(Vertex));
 
     cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice);
-    kernel<<<1,1>>>(devStart);
+//    kernel<<<1,1>>>(devStart);
     cudaFree(devStart);
 }
 
 int main(int argc, const char *argv[]) {
-    main2(argc, argv);
+//    main2(argc, argv);
 }
