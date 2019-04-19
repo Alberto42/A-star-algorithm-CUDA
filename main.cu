@@ -281,7 +281,7 @@ __global__ void kernel(Vertex *start, Vertex *target, int slidesCount) {
             m = THREADS_COUNT;
         }
         __syncthreads();
-        break;
+
     }
 }
 
@@ -301,10 +301,13 @@ void main2(int argc, const char *argv[]) {
 
     cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice);
     cudaMemcpy(devTarget, &target, sizeof(Vertex), cudaMemcpyHostToDevice);
+
     kernel << < 1, 1 >> > (devStart, devTarget, slidesCount);
+
     cudaFree(devStart);
+    cudaFree(devTarget);
 }
 
 int main(int argc, const char *argv[]) {
-//    main2(argc, argv);
+    main2(argc, argv);
 }
