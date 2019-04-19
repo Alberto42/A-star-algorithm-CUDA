@@ -49,6 +49,17 @@ struct State {
     __device__ State(int g, int f, Vertex node):g(g), f(f), node(node) {}
 };
 
+enum Version {
+    sliding, pathfinding
+};
+
+struct Program_spec {
+    Version version;
+    ifstream in;
+    ofstream out;
+//    Program_spec(Version version, ifstream in, ofstream out):version(version),in(in),out(out){};
+};
+
 __device__ bool operator<(const State &a, const State &b) { return a.f < b.f; }
 
 __device__ bool operator>(const State &a, const State &b) { return a.f > b.f; }
@@ -64,7 +75,6 @@ __device__ void swap(int &a, int &b) {
     a = b;
     b = tmp;
 }
-
 struct PriorityQueue {
     State A[PRIORITY_QUEUE_SIZE];
 
@@ -129,16 +139,6 @@ struct PriorityQueue {
     }
 };
 
-enum Version {
-    sliding, pathfinding
-};
-struct Program_spec {
-    Version version;
-    ifstream in;
-    ofstream out;
-//    Program_spec(Version version, ifstream in, ofstream out):version(version),in(in),out(out){};
-};
-
 void parse_args(int argc, const char *argv[], Program_spec &program_spec) {
     po::options_description desc{"Options"};
     try {
@@ -184,31 +184,6 @@ void read_slides(ifstream &in, int *slides, int &len) {
     }
 }
 
-__device__ void expand(State qi, State s[], int &sSize) {
-    int moves[] = {-1, 1, -slidesCountSqrt, slidesCountSqrt};
-    const int movesCount = 4;
-    int empty = -1;
-    int *slides = qi.node.slides;
-    for (int i = 0; i < slidesCount; i++)
-        if (slides[i] == -1) {
-            empty = i;
-            break;
-        }
-    if (empty == -1)
-        assert(false);
-    for (int i = 0; i < movesCount; i++) {
-        int move = empty + moves[i];
-        if (move < 0 || move >= slidesCount)
-            continue;
-        State sTmp = qi;
-        sTmp.g = qi.g + 1;
-        // fixme
-        swap(sTmp.node.slides[empty], sTmp.node.slides[move]);
-        assert(sSize < MAX_S_SIZE);
-        s[sSize++] = sTmp;
-    }
-}
-
 __device__ int f(const Vertex &a, const Vertex &b) {
     int pos[MAX_SLIDES_COUNT + 1];
     int sum = 0;
@@ -228,6 +203,33 @@ __device__ int f(const Vertex &a, const Vertex &b) {
     return sum;
 }
 
+__device__ void expand(const State qi, State s[], int &sSize, const Vertex &target) {
+    int moves[] = {-1, 1, -slidesCountSqrt, slidesCountSqrt};
+    const int movesCount = 4;
+    int empty = -1;
+    const int *slides = qi.node.slides;
+    for (int i = 0; i < slidesCount; i++)
+        if (slides[i] == -1) {
+            empty = i;
+            break;
+        }
+    if (empty == -1)
+        assert(false);
+    for (int i = 0; i < movesCount; i++) {
+        int move = empty + moves[i];
+        if (move < 0 || move >= slidesCount)
+            continue;
+        State sTmp = qi; // I hope slides is copied
+        sTmp.g = qi.g + 1;
+
+        swap(sTmp.node.slides[empty], sTmp.node.slides[move]);
+        sTmp.f = f(sTmp.node, target);
+        sTmp.prev = nullptr; //fixme
+        assert(sSize < MAX_S_SIZE);
+        s[sSize++] = sTmp;
+    }
+}
+
 __device__ int calcSlidesCountSqrt(int slidesCount) {
     int slidesCountSqrt;
     for (int i = 1; i < slidesCount; i++) {
@@ -243,13 +245,11 @@ __device__ int calcSlidesCountSqrt(int slidesCount) {
 }
 
 __shared__ int m; //id in qi
-__shared__ State
-qi[THREADS_COUNT+1];
+__shared__ State qi[THREADS_COUNT+1];
 
 __global__ void kernel(Vertex *start, Vertex *target, int slidesCount) {
     PriorityQueue q;
-    State
-    s[MAX_S_SIZE];
+    State s[MAX_S_SIZE];
     int sSize = 0;
 
     int id = threadIdx.x + blockIdx.x;
@@ -273,8 +273,15 @@ __global__ void kernel(Vertex *start, Vertex *target, int slidesCount) {
             while (qi[idm].f < qi[m].f) {
                 idm = atomicExch(&m, idm);
             }
+        } else
+            expand(qi[id], s, sSize, *target);
+        __syncthreads();
+        if (id == 0) {
+            qi[THREADS_COUNT] = qi[m];
+            m = THREADS_COUNT;
         }
-        expand(qi[id], s, sSize);
+        __syncthreads();
+        break;
     }
 }
 
@@ -282,14 +289,19 @@ void main2(int argc, const char *argv[]) {
     Program_spec result;
     parse_args(argc, argv, result);
     int slides[MAX_SLIDES_COUNT], slidesCount;
+
     read_slides(result.in, slides, slidesCount);
     Vertex start(slides);
+    read_slides(result.in, slides, slidesCount);
+    Vertex target(slides);
 
-    Vertex *devStart;
+    Vertex *devStart, *devTarget;
     cudaMalloc(&devStart, sizeof(Vertex));
+    cudaMalloc(&devTarget, sizeof(Vertex));
 
     cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice);
-    kernel << < 1, 1 >> > (devStart, nullptr, slidesCount); //fixme
+    cudaMemcpy(devTarget, &target, sizeof(Vertex), cudaMemcpyHostToDevice);
+    kernel << < 1, 1 >> > (devStart, devTarget, slidesCount);
     cudaFree(devStart);
 }
 
