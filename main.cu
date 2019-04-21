@@ -95,19 +95,23 @@ struct PriorityQueue {
     }
 
     __device__ void maxHeapify(int i) {
-        int l = left(i);
-        int r = right(i);
-        int smallest;
-        if (l <= heapSize && A[l] < A[i]) {
-            smallest = l;
-        } else {
-            smallest = i;
-        }
-        if (r <= heapSize && A[r] < A[smallest])
-            smallest = r;
-        if (smallest != i) {
-            swap(A[i], A[smallest]);
-            maxHeapify(smallest);
+        while(true) {
+            int l = left(i);
+            int r = right(i);
+            int smallest;
+            if (l <= heapSize && A[l] < A[i]) {
+                smallest = l;
+            } else {
+                smallest = i;
+            }
+            if (r <= heapSize && A[r] < A[smallest])
+                smallest = r;
+            if (smallest != i) {
+                swap(A[i], A[smallest]);
+                i = smallest;
+            } else {
+                break;
+            }
         }
     }
 
@@ -122,12 +126,9 @@ struct PriorityQueue {
         }
     }
 
-    __device__ State
-
-    pop() {
+    __device__ State pop() {
         assert(heapSize > 0);
-        State
-        max = A[1];
+        State max = A[1];
         A[1] = A[heapSize];
         heapSize--;
         maxHeapify(1);
