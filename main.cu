@@ -136,7 +136,7 @@ struct PriorityQueue {
     }
 
     __device__ bool empty() {
-        return heapSize > 0;
+        return heapSize == 0;
     }
 };
 
@@ -196,10 +196,12 @@ __device__ int f(const Vertex &a, const Vertex &b) {
         }
     }
     for (int posA = 0; posA < slidesCount; posA++) {
-        int posB = pos[a.slides[posA]];
-        int tmp1 = abs(posA % slidesCountSqrt - posB % slidesCountSqrt);
-        int tmp2 = abs(posA / slidesCountSqrt - posB / slidesCountSqrt);
-        sum += tmp1 + tmp2;
+        if (a.slides[posA] != -1) {
+            int posB = pos[a.slides[posA]];
+            int tmp1 = abs(posA % slidesCountSqrt - posB % slidesCountSqrt);
+            int tmp2 = abs(posA / slidesCountSqrt - posB / slidesCountSqrt);
+            sum += tmp1 + tmp2;
+        }
     }
     return sum;
 }
@@ -255,11 +257,11 @@ __global__ void kernel(Vertex *start, Vertex *target, int slidesCount) {
 
     int id = threadIdx.x + blockIdx.x;
     if (id == 0) {
+        ::slidesCount = slidesCount;
+        slidesCountSqrt = calcSlidesCountSqrt(slidesCount);
         q.insert(State(0, f(*start, *target), *start));
         qi[THREADS_COUNT] = State(INF);
         m = THREADS_COUNT;
-        ::slidesCount = slidesCount;
-        slidesCountSqrt = calcSlidesCountSqrt(slidesCount);
     }
     __syncthreads();
     while (true) {
