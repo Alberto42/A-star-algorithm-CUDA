@@ -264,6 +264,9 @@ __global__ void kernel(Vertex *start, Vertex *target, int slidesCount) {
     while (true) {
         sSize = 0;
         if (q.empty()) {
+            __syncthreads();
+            __syncthreads();
+            break;
             continue;
         }
         qi[id] = q.pop();
@@ -281,7 +284,7 @@ __global__ void kernel(Vertex *start, Vertex *target, int slidesCount) {
             m = THREADS_COUNT;
         }
         __syncthreads();
-
+        break;
     }
 }
 
