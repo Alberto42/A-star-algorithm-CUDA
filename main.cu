@@ -256,7 +256,7 @@ __host__ int calcSlidesCountSqrt(int slidesCount) {
     return slidesCountSqrt;
 }
 
-__global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQueue *q, State *s[], int *sSize,
+__global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQueue *q, State *s, int *sSize,
                              int slidesCount, int slidesCountSqrt) {
 
     int id = threadIdx.x + blockIdx.x;
@@ -280,7 +280,7 @@ __global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQu
                 continue;
         }
     } else
-        expand(qi, s[id], sSize[id], *target, slidesCount, slidesCountSqrt);
+        expand(qi, s + (id*THREADS_PER_BLOCK_COUNT), sSize[id], *target, slidesCount, slidesCountSqrt);
 }
 
 void main2(int argc, const char *argv[]) {
@@ -307,27 +307,22 @@ void main2(int argc, const char *argv[]) {
     }
 
     Vertex *devStart, *devTarget;
-    State *devM, *devS[THREADS_COUNT];
-    PriorityQueue devQ[THREADS_COUNT];
-    int devSSize[THREADS_COUNT];
+    State *devM, *devS;
+    PriorityQueue *devQ;
+    int *devSSize;
 
     cudaMalloc(&devStart, sizeof(Vertex));
     cudaMalloc(&devTarget, sizeof(Vertex));
     cudaMalloc(&devM,sizeof(State));
-    cudaMalloc((void**)&devQ,sizeof(PriorityQueue) * THREADS_COUNT);
-    cudaMalloc((void**)&devS,sizeof(State*) * THREADS_COUNT);
-    for(int i=0;i<THREADS_COUNT;i++) {
-        cudaMalloc(&devS[i], sizeof(State) * MAX_S_SIZE);
-    }
-    cudaMalloc((void**)&devSSize,sizeof(int) * THREADS_COUNT);
+    cudaMalloc(&devQ,sizeof(PriorityQueue) * THREADS_COUNT);
+    cudaMalloc(&devS,sizeof(State) * THREADS_COUNT * MAX_S_SIZE);
+    cudaMalloc(&devSSize,sizeof(int) * THREADS_COUNT);
 
     cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice);
     cudaMemcpy(devTarget, &target, sizeof(Vertex), cudaMemcpyHostToDevice);
     cudaMemcpy(devM, &m, sizeof(State), cudaMemcpyHostToDevice);
-    for(int i=0;i<THREADS_COUNT;i++) {
-        cudaMemcpy(devQ, q + i, sizeof(State), cudaMemcpyHostToDevice);
-        cudaMemcpy(devSSize, sSize + i, sizeof(int), cudaMemcpyHostToDevice);
-    }
+    cudaMemcpy(devQ, q, sizeof(PriorityQueue) * THREADS_COUNT, cudaMemcpyHostToDevice);
+    cudaMemcpy(devSSize, sSize, sizeof(int) * THREADS_COUNT, cudaMemcpyHostToDevice);
 
     expandKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devStart, devTarget, devM, devQ, devS, devSSize,
             slidesCount, slidesCountSqrt);
