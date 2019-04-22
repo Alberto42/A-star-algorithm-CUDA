@@ -146,6 +146,10 @@ struct PriorityQueue {
     __device__ bool empty() {
         return heapSize == 0;
     }
+
+    __device__ State* top() {
+        return (!this->empty()) ? A : nullptr;
+    }
 };
 
 void parse_args(int argc, const char *argv[], Program_spec &program_spec) {
@@ -283,6 +287,13 @@ __global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQu
     } else
         expand(qi, s + (id*THREADS_PER_BLOCK_COUNT), sSize[id], *target, slidesCount, slidesCountSqrt);
 }
+__global__ void checkIfTheEndKernel(State *m, PriorityQueue *q, int* result) {
+    int id = threadIdx.x + blockIdx.x;
+    State* t = q[id].top();
+    if (t != nullptr && m->f > t->f) {
+        atomicExch(result, 0); //fixme: Maybe atomic is not necessary
+    }
+}
 
 void main2(int argc, const char *argv[]) {
     Program_spec result;
@@ -301,7 +312,7 @@ void main2(int argc, const char *argv[]) {
 
     State m(INF);
     PriorityQueue q[THREADS_COUNT];
-    int sSize[THREADS_COUNT];
+    int sSize[THREADS_COUNT], isTheEnd;
     q[0].insert(State(0, f(start, target, slidesCount, slidesCountSqrt), start));
     for(int i=0;i<THREADS_COUNT;i++) {
         sSize[i] = 0;
@@ -310,7 +321,7 @@ void main2(int argc, const char *argv[]) {
     Vertex *devStart, *devTarget;
     State *devM, *devS;
     PriorityQueue *devQ;
-    int *devSSize;
+    int *devSSize, *devIsTheEnd;
 
     cudaMalloc(&devStart, sizeof(Vertex));
     cudaMalloc(&devTarget, sizeof(Vertex));
@@ -318,6 +329,7 @@ void main2(int argc, const char *argv[]) {
     cudaMalloc(&devQ,sizeof(PriorityQueue) * THREADS_COUNT);
     cudaMalloc(&devS,sizeof(State) * THREADS_COUNT * MAX_S_SIZE);
     cudaMalloc(&devSSize,sizeof(int) * THREADS_COUNT);
+    cudaMalloc(&devIsTheEnd, sizeof(int));
 
     cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice);
     cudaMemcpy(devTarget, &target, sizeof(Vertex), cudaMemcpyHostToDevice);
@@ -325,8 +337,18 @@ void main2(int argc, const char *argv[]) {
     cudaMemcpy(devQ, q, sizeof(PriorityQueue) * THREADS_COUNT, cudaMemcpyHostToDevice);
     cudaMemcpy(devSSize, sSize, sizeof(int) * THREADS_COUNT, cudaMemcpyHostToDevice);
 
+
     expandKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devStart, devTarget, devM, devQ, devS, devSSize,
             slidesCount, slidesCountSqrt);
+
+    while(true) {
+        isTheEnd = 1;
+        cudaMemcpy(devIsTheEnd, &isTheEnd, sizeof(int), cudaMemcpyHostToDevice);
+        checkIfTheEndKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devM, devQ, devIsTheEnd);
+        cudaMemcpy(&isTheEnd, devIsTheEnd, sizeof(int), cudaMemcpyDeviceToHost);
+        if (isTheEnd)
+            break; //fixme
+    }
 
     cudaFree(devStart);
     cudaFree(devTarget);
@@ -334,6 +356,7 @@ void main2(int argc, const char *argv[]) {
     cudaFree(devQ);
     cudaFree(devS);
     cudaFree(devSSize);
+    cudaFree(devIsTheEnd);
 }
 
 int main(int argc, const char *argv[]) {
