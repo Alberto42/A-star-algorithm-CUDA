@@ -249,6 +249,7 @@ __device__ int calcSlidesCountSqrt(int slidesCount) {
 
 __shared__ int m; //id in qi
 __shared__ State qi[THREADS_COUNT+1];
+__shared__ int allEmpty;
 
 __global__ void kernel(Vertex *start, Vertex *target, int slidesCount) {
     PriorityQueue q;
@@ -266,11 +267,16 @@ __global__ void kernel(Vertex *start, Vertex *target, int slidesCount) {
     __syncthreads();
     while (true) {
         sSize = 0;
+        if (id == 0) {
+            allEmpty = true;
+        }
         if (q.empty()) {
             __syncthreads();
             __syncthreads();
-            break;
-            continue;
+            if (allEmpty)
+                break;
+            else
+                continue;
         }
         qi[id] = q.pop();
 
@@ -282,18 +288,21 @@ __global__ void kernel(Vertex *start, Vertex *target, int slidesCount) {
         } else
             expand(qi[id], s, sSize, *target);
         __syncthreads();
+        atomicExch(&allEmpty, false); //fixme: assignment instead of atomicExch
         if (id == 0) {
             qi[THREADS_COUNT] = qi[m];
             m = THREADS_COUNT;
         }
         __syncthreads();
-        break;
     }
 }
 
 void main2(int argc, const char *argv[]) {
     Program_spec result;
-    parse_args(argc, argv, result);
+//    parse_args(argc, argv, result);
+    result.in.open("slides/1.in");
+    result.out.open("dupa");
+    result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
 
     read_slides(result.in, slides, slidesCount);
@@ -308,7 +317,7 @@ void main2(int argc, const char *argv[]) {
     cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice);
     cudaMemcpy(devTarget, &target, sizeof(Vertex), cudaMemcpyHostToDevice);
 
-    kernel << < 1, 1 >> > (devStart, devTarget, slidesCount);
+    kernel << < 1, 5 >> > (devStart, devTarget, slidesCount);
 
     cudaFree(devStart);
     cudaFree(devTarget);
