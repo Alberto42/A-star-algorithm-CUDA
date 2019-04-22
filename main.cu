@@ -237,6 +237,7 @@ slidesCountSqrt) {
         swap(sTmp.node.slides[empty], sTmp.node.slides[move]);
         sTmp.f = f(sTmp.node, target, slidesCount, slidesCountSqrt);
         sTmp.prev = nullptr; //fixme
+        sTmp.lock = 1;
         assert(sSize < MAX_S_SIZE);
         s[sSize++] = sTmp;
     }
