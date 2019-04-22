@@ -14,9 +14,9 @@ const int THREADS_PER_BLOCK_COUNT = 1;
 const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
 const int MAX_SLIDES_COUNT = 25;
 const int PRIORITY_QUEUE_SIZE = 100;
-const int MAX_S_SIZE = 100;
+const int MAX_S_SIZE = 10;
 const int INF = 1000000000;
-__shared__ int slidesCount, slidesCountSqrt;
+int slidesCount, slidesCountSqrt;
 
 struct Vertex {
     int slides[MAX_SLIDES_COUNT];
@@ -29,7 +29,7 @@ struct Vertex {
     __device__ Vertex() {}
 };
 
-__device__ bool operator==(const Vertex &a, const Vertex &b) {
+__device__ bool vertexEqual(const Vertex &a, const Vertex &b,const int &slidesCount) {
     for (int i = 0; i < slidesCount; i++) {
         if (a.slides[i] != b.slides[i])
             return false;
@@ -39,14 +39,14 @@ __device__ bool operator==(const Vertex &a, const Vertex &b) {
 
 struct State {
     Vertex node;
-    int g, f;
+    int g, f, lock;
     State *prev;
 
-    __device__ State() {}
+    __device__ __host__ State():lock(1) {}
 
-    __device__ State(int f):f(f) {}
+    __device__ __host__ State(int f):f(f), lock(1) {}
 
-    __device__ State(int g, int f, Vertex node):g(g), f(f), node(node) {}
+    __device__ __host__ State(int g, int f, Vertex node):g(g), f(f), node(node), lock(1) {}
 };
 
 enum Version {
@@ -60,17 +60,17 @@ struct Program_spec {
 //    Program_spec(Version version, ifstream in, ofstream out):version(version),in(in),out(out){};
 };
 
-__device__ bool operator<(const State &a, const State &b) { return a.f < b.f; }
+__device__ __host__ bool operator<(const State &a, const State &b) { return a.f < b.f; }
 
-__device__ bool operator>(const State &a, const State &b) { return a.f > b.f; }
+__device__ __host__ bool operator>(const State &a, const State &b) { return a.f > b.f; }
 
-__device__ void swap(State &a, State &b) {
+__device__ __host__ void swap(State &a, State &b) {
     State tmp = a;
     a = b;
     b = tmp;
 }
 
-__device__ void swap(int &a, int &b) {
+__device__ __host__ void swap(int &a, int &b) {
     int tmp = a;
     a = b;
     b = tmp;
@@ -82,19 +82,19 @@ struct PriorityQueue {
 
     int heapSize = 0;
 
-    __device__ int parent(int i) {
+    __device__ __host__ int parent(int i) {
         return i / 2;
     }
 
-    __device__ int left(int i) {
+    __device__ __host__ int left(int i) {
         return i * 2;
     }
 
-    __device__ int right(int i) {
+    __device__ __host__ int right(int i) {
         return i * 2 + 1;
     }
 
-    __device__ void maxHeapify(int i) {
+    __device__ __host__ void maxHeapify(int i) {
         while(true) {
             int l = left(i);
             int r = right(i);
@@ -115,7 +115,7 @@ struct PriorityQueue {
         }
     }
 
-    __device__ void insert(State s) {
+    __device__ __host__ void insert(State s) {
         assert(heapSize < PRIORITY_QUEUE_SIZE);
         heapSize++;
         A[heapSize] = s;
@@ -185,7 +185,7 @@ void read_slides(ifstream &in, int *slides, int &len) {
     }
 }
 
-__device__ int f(const Vertex &a, const Vertex &b) {
+__device__ __host__ int f(const Vertex &a, const Vertex &b, int slidesCount, int slidesCountSqrt) {
     int pos[MAX_SLIDES_COUNT + 1];
     int sum = 0;
     for (int i = 0; i < slidesCount; i++) {
@@ -206,7 +206,8 @@ __device__ int f(const Vertex &a, const Vertex &b) {
     return sum;
 }
 
-__device__ void expand(const State qi, State s[], int &sSize, const Vertex &target) {
+__device__ void expand(const State qi, State s[], int &sSize, const Vertex &target,int slidesCount, int
+slidesCountSqrt) {
     int moves[] = {-1, 1, -slidesCountSqrt, slidesCountSqrt};
     const int movesCount = 4;
     int empty = -1;
@@ -226,14 +227,14 @@ __device__ void expand(const State qi, State s[], int &sSize, const Vertex &targ
         sTmp.g = qi.g + 1;
 
         swap(sTmp.node.slides[empty], sTmp.node.slides[move]);
-        sTmp.f = f(sTmp.node, target);
+        sTmp.f = f(sTmp.node, target, slidesCount, slidesCountSqrt);
         sTmp.prev = nullptr; //fixme
         assert(sSize < MAX_S_SIZE);
         s[sSize++] = sTmp;
     }
 }
 
-__device__ int calcSlidesCountSqrt(int slidesCount) {
+__host__ int calcSlidesCountSqrt(int slidesCount) {
     int slidesCountSqrt;
     for (int i = 1; i < slidesCount; i++) {
         if (i * i == slidesCount) {
@@ -247,54 +248,51 @@ __device__ int calcSlidesCountSqrt(int slidesCount) {
     return slidesCountSqrt;
 }
 
-__shared__ int m; //id in qi
-__shared__ State qi[THREADS_COUNT+1];
-__shared__ int allEmpty;
+__global__ void kernel(Vertex *start, Vertex *target, State *m, PriorityQueue q[], State s[][MAX_S_SIZE], int sSize[],
+                       int slidesCount, int slidesCountSqrt) {
 
-__global__ void kernel(Vertex *start, Vertex *target, int slidesCount) {
-    PriorityQueue q;
-    State s[MAX_S_SIZE];
-    int sSize = 0;
-
-    int id = threadIdx.x + blockIdx.x;
-    if (id == 0) {
-        ::slidesCount = slidesCount;
-        slidesCountSqrt = calcSlidesCountSqrt(slidesCount);
-        q.insert(State(0, f(*start, *target), *start));
-        qi[THREADS_COUNT] = State(INF);
-        m = THREADS_COUNT;
-    }
-    __syncthreads();
-    while (true) {
-        sSize = 0;
-        if (id == 0) {
-            allEmpty = true;
-        }
-        if (q.empty()) {
-            __syncthreads();
-            __syncthreads();
-            if (allEmpty)
-                break;
-            else
-                continue;
-        }
-        qi[id] = q.pop();
-
-        if (qi[id].node == *target) {
-            int idm = id;
-            while (qi[idm].f < qi[m].f) {
-                idm = atomicExch(&m, idm);
-            }
-        } else
-            expand(qi[id], s, sSize, *target);
-        __syncthreads();
-        atomicExch(&allEmpty, false); //fixme: assignment instead of atomicExch
-        if (id == 0) {
-            qi[THREADS_COUNT] = qi[m];
-            m = THREADS_COUNT;
-        }
-        __syncthreads();
-    }
+//    State s[MAX_S_SIZE];
+//    int sSize = 0;
+//
+//    int id = threadIdx.x + blockIdx.x;
+//    if (id == 0) {
+//        ::slidesCount = slidesCount;
+//        slidesCountSqrt = calcSlidesCountSqrt(slidesCount);
+//        q.insert(State(0, f(*start, *target), *start));
+//        qi[THREADS_COUNT] = State(INF);
+//        m = THREADS_COUNT;
+//    }
+//    __syncthreads();
+//    while (true) {
+//        sSize = 0;
+//        if (id == 0) {
+//            allEmpty = true;
+//        }
+//        if (q.empty()) {
+//            __syncthreads();
+//            __syncthreads();
+//            if (allEmpty)
+//                break;
+//            else
+//                continue;
+//        }
+//        qi[id] = q.pop();
+//
+//        if (qi[id].node == *target) {
+//            int idm = id;
+//            while (qi[idm].f < qi[m].f) {
+//                idm = atomicExch(&m, idm);
+//            }
+//        } else
+//            expand(qi[id], s, sSize, *target);
+//        __syncthreads();
+//        atomicExch(&allEmpty, false); //fixme: assignment instead of atomicExch
+//        if (id == 0) {
+//            qi[THREADS_COUNT] = qi[m];
+//            m = THREADS_COUNT;
+//        }
+//        __syncthreads();
+//    }
 }
 
 void main2(int argc, const char *argv[]) {
@@ -310,17 +308,43 @@ void main2(int argc, const char *argv[]) {
     read_slides(result.in, slides, slidesCount);
     Vertex target(slides);
 
+    State m(INF), s[THREADS_COUNT][MAX_S_SIZE];
+    PriorityQueue q[THREADS_COUNT];
+    int sSize[THREADS_COUNT];
+    q[0].insert(State(0, f(start, target, slidesCount, slidesCountSqrt), start));
+    for(int i=0;i<THREADS_COUNT;i++)
+        sSize[i] = 0;
+
     Vertex *devStart, *devTarget;
+    State *devM, devS[THREADS_COUNT][MAX_S_SIZE];
+    PriorityQueue devQ[THREADS_COUNT];
+    int devSSize[THREADS_COUNT];
+
     cudaMalloc(&devStart, sizeof(Vertex));
     cudaMalloc(&devTarget, sizeof(Vertex));
+    cudaMalloc(&devM,sizeof(State));
+    cudaMalloc((void**)&devQ,sizeof(PriorityQueue) * THREADS_COUNT);
+    cudaMalloc((void**)&devS,sizeof(State) * THREADS_COUNT * MAX_S_SIZE);
+    cudaMalloc((void**)&devSSize,sizeof(int) * THREADS_COUNT);
 
     cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice);
     cudaMemcpy(devTarget, &target, sizeof(Vertex), cudaMemcpyHostToDevice);
+    cudaMemcpy(devM, &m, sizeof(State), cudaMemcpyHostToDevice);
+    for(int i=0;i<THREADS_COUNT;i++) {
+        cudaMemcpy(devQ, q + i, sizeof(State), cudaMemcpyHostToDevice);
+        cudaMemcpy(devSSize, sSize + i, sizeof(int), cudaMemcpyHostToDevice);
+    }
 
-    kernel << < 1, 5 >> > (devStart, devTarget, slidesCount);
+    slidesCountSqrt = calcSlidesCountSqrt(slidesCount);
+
+    kernel << < 1, 5 >> > (devStart, devTarget, devM, devQ, devS, devSSize,slidesCount, slidesCountSqrt);
 
     cudaFree(devStart);
     cudaFree(devTarget);
+    cudaFree(devM);
+    cudaFree(devQ);
+    cudaFree(devS);
+    cudaFree(devSSize);
 }
 
 int main(int argc, const char *argv[]) {
