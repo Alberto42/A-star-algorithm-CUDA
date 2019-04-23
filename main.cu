@@ -102,6 +102,10 @@ struct HashMap {
         assert(false);
         return nullptr;
     }
+    __device__ __host__ void insert(State& s, int slidesCount) {
+        State* tmp = this->find(s.node, slidesCount);
+        *tmp = s;
+    }
 };
 enum Version {
     sliding, pathfinding
@@ -434,10 +438,12 @@ void main2(int argc, const char *argv[]) {
     PriorityQueue q[THREADS_COUNT];
     HashMap h;
     int sSize[THREADS_COUNT];
-    q[0].insert(State(0, f(start, target, slidesCount, slidesCountSqrt), start));
+    State startState = State(0, f(start, target, slidesCount, slidesCountSqrt), start);
+    q[0].insert(startState);
     for(int i=0;i<THREADS_COUNT;i++) {
         sSize[i] = 0;
     }
+    h.insert(startState, slidesCount);
 
     Vertex *devStart, *devTarget;
     State *devM, *devS;
