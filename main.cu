@@ -16,6 +16,7 @@ const int MAX_SLIDES_COUNT = 25;
 const int PRIORITY_QUEUE_SIZE = 100;
 const int MAX_S_SIZE = 10;
 const int INF = 1000000000;
+const int H_SIZE = 1024; // It must be the power of 2
 int slidesCount, slidesCountSqrt;
 
 struct Vertex {
@@ -27,6 +28,24 @@ struct Vertex {
     }
 
     __device__ Vertex() {}
+    __device__ unsigned hashBase(int slidesCount, int base) {
+        int result = 0;
+        for(int i=0,p=1;i<slidesCount;i++,p=( p * base ) % H_SIZE) {
+            result = (result + slides[i]*p) % H_SIZE;
+        }
+        return result;
+    }
+    __device__ int hash1(int slidesCount) {
+        return this->hashBase(slidesCount, 30);
+    }
+    __device__ int hash2(int slidesCount) {
+        int hash = this->hashBase(slidesCount, 29);
+        hash = hash % 2 ? hash : (hash + 1) % H_SIZE;
+        return hash;
+    }
+    __device__ int hash(int i, int slidesCount) {
+        return (hash1(slidesCount) + i*hash2(slidesCount) ) % H_SIZE;
+    }
 };
 
 __device__ bool vertexEqual(const Vertex &a, const Vertex &b,const int &slidesCount) {
@@ -56,7 +75,26 @@ struct State {
     }
 };
 
-
+struct HashMap {
+    State hashmap[H_SIZE];
+    bool available[H_SIZE];
+    HashMap() {
+        for(int i=0;i<H_SIZE;i++)
+            available[i] = true;
+    }
+    void insert(const State &s, int slidesCount) {
+    }
+    __device__ State* find(Vertex& v, int slidesCount) {
+        for(int i=0;i<H_SIZE;i++) {
+            int hash = v.hash(i,slidesCount);
+            assert(0 <= hash && hash < H_SIZE);
+            if (available[hash] || vertexEqual(hashmap[hash].node,v, slidesCount))
+                return &hashmap[hash];
+        }
+        assert(false);
+        return nullptr;
+    }
+};
 enum Version {
     sliding, pathfinding
 };
@@ -191,7 +229,7 @@ void read_slides(ifstream &in, int *slides, int &len) {
     len = 0;
     while (regex_search(s, m, e)) {
         for (auto x:m) {
-            slides[len++] = x == "_" ? -1 : stoi(x);
+            slides[len++] = x == "_" ? 0 : stoi(x);
         }
         s = m.suffix().str();
     }
@@ -202,13 +240,13 @@ __device__ __host__ int f(const Vertex &a, const Vertex &b, int slidesCount, int
     int sum = 0;
     for (int i = 0; i < slidesCount; i++) {
         int value = b.slides[i];
-        if (value != -1) {
+        if (value != 0) {
             assert(1 <= value && value <= slidesCount);
             pos[value] = i;
         }
     }
     for (int posA = 0; posA < slidesCount; posA++) {
-        if (a.slides[posA] != -1) {
+        if (a.slides[posA] != 0) {
             int posB = pos[a.slides[posA]];
             int tmp1 = abs(posA % slidesCountSqrt - posB % slidesCountSqrt);
             int tmp2 = abs(posA / slidesCountSqrt - posB / slidesCountSqrt);
@@ -225,7 +263,7 @@ slidesCountSqrt) {
     int empty = -1;
     const int *slides = qi.node.slides;
     for (int i = 0; i < slidesCount; i++)
-        if (slides[i] == -1) {
+        if (slides[i] == 0) {
             empty = i;
             break;
         }
@@ -285,13 +323,22 @@ __global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQu
                 continue;
         }
     } else
-        expand(qi, s + (id*THREADS_PER_BLOCK_COUNT), sSize[id], *target, slidesCount, slidesCountSqrt);
+        expand(qi, s + (id*MAX_S_SIZE), sSize[id], *target, slidesCount, slidesCountSqrt);
 }
 __global__ void checkIfTheEndKernel(State *m, PriorityQueue *q, int* result) {
     int id = threadIdx.x + blockIdx.x;
     State* t = q[id].top();
     if (t != nullptr && m->f > t->f) {
         atomicExch(result, 0); //fixme: Maybe atomic is not necessary
+    }
+}
+__global__ void removeUselessStates(HashMap *h, State *t,int *sSize, int slidesCount) {
+    int id = threadIdx.x + blockIdx.x;
+    for(int i=id*MAX_S_SIZE;i < id*MAX_S_SIZE + sSize[id];i++) {
+        assert(t[i].f != -1);
+        State* tmp = h->find(t[i].node, slidesCount);
+        if (tmp->g < t[i].g)
+            t[i].f = -1;
     }
 }
 
