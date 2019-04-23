@@ -28,27 +28,37 @@ struct Vertex {
     }
 
     __device__ Vertex() {}
-    __device__ unsigned hashBase(int slidesCount, int base) {
+    __device__ __host__ unsigned hashBase(int slidesCount, int base) {
         int result = 0;
         for(int i=0,p=1;i<slidesCount;i++,p=( p * base ) % H_SIZE) {
             result = (result + slides[i]*p) % H_SIZE;
         }
         return result;
     }
-    __device__ int hash1(int slidesCount) {
+    __device__ __host__ int hash1(int slidesCount) {
         return this->hashBase(slidesCount, 30);
     }
-    __device__ int hash2(int slidesCount) {
+    __device__ __host__ int hash2(int slidesCount) {
         int hash = this->hashBase(slidesCount, 29);
         hash = hash % 2 ? hash : (hash + 1) % H_SIZE;
         return hash;
     }
-    __device__ int hash(int i, int slidesCount) {
+    __device__ __host__ int hash(int i, int slidesCount) {
         return (hash1(slidesCount) + i*hash2(slidesCount) ) % H_SIZE;
+    }
+    __host__ void print(int slidesCount) {
+        for(int i=0;i<slidesCount;i++){
+            if (slides[i] == 0)
+                cout<<"_";
+            else cout<<slides[i];
+            if (i != slidesCount-1)
+                cout<<",";
+        }
+        cout << endl;
     }
 };
 
-__device__ bool vertexEqual(const Vertex &a, const Vertex &b,const int &slidesCount) {
+__device__ __host__ bool vertexEqual(const Vertex &a, const Vertex &b,const int &slidesCount) {
     for (int i = 0; i < slidesCount; i++) {
         if (a.slides[i] != b.slides[i])
             return false;
@@ -59,7 +69,7 @@ __device__ bool vertexEqual(const Vertex &a, const Vertex &b,const int &slidesCo
 struct State {
     Vertex node;
     int g, f, lock;
-    State *prev;
+    Vertex prev;
 
     __device__ __host__ State():lock(1) {}
 
@@ -81,9 +91,8 @@ struct HashMap {
         for(int i=0;i<H_SIZE;i++)
             hashmap[i].f = -1;
     }
-    void insert(const State &s, int slidesCount) {
-    }
-    __device__ State* find(Vertex& v, int slidesCount) {
+
+    __device__ __host__ State* find(Vertex& v, int slidesCount) {
         for(int i=0;i<H_SIZE;i++) {
             int hash = v.hash(i,slidesCount);
             assert(0 <= hash && hash < H_SIZE);
@@ -278,7 +287,7 @@ slidesCountSqrt) {
 
         swap(sTmp.node.slides[empty], sTmp.node.slides[move]);
         sTmp.f = f(sTmp.node, target, slidesCount, slidesCountSqrt);
-        sTmp.prev = nullptr; //fixme
+        sTmp.prev = qi.node;
         sTmp.lock = 1;
         assert(sSize < MAX_S_SIZE);
         s[sSize++] = sTmp;
@@ -370,6 +379,16 @@ __global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue 
         }
     }
 }
+void printPath(HashMap &h, State &m,Vertex& start, int slidesCount) {
+    if (vertexEqual(m.node, start, slidesCount)) {
+        m.node.print(slidesCount);
+        return;
+    }
+    State* tmp = h.find(m.prev,slidesCount);
+    assert(tmp->f != -1);
+    printPath(h,*tmp,start, slidesCount);
+    m.node.print(slidesCount);
+}
 
 void main2(int argc, const char *argv[]) {
     Program_spec result;
@@ -427,13 +446,17 @@ void main2(int argc, const char *argv[]) {
         checkIfTheEndKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devM, devQ, devIsTheEnd);
         cudaMemcpy(&isTheEnd, devIsTheEnd, sizeof(int), cudaMemcpyDeviceToHost);
         if (isTheEnd) {
-            break; //fixme
+            break;
         }
 
         removeUselessStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devS, devSSize, slidesCount);
 
         insertNewStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devS, devSSize, devQ, slidesCount);
     }
+
+    cudaMemcpy(&m, devM, sizeof(State), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&h, devH, sizeof(HashMap), cudaMemcpyDeviceToHost);
+    printPath(h,m,start,slidesCount);
 
     cudaFree(devStart);
     cudaFree(devTarget);
