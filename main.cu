@@ -9,8 +9,8 @@
 namespace po = boost::program_options;
 using namespace std;
 
-const int BLOCKS_COUNT = 1;
-const int THREADS_PER_BLOCK_COUNT = 5;
+const int BLOCKS_COUNT = 2;
+const int THREADS_PER_BLOCK_COUNT = 4;
 const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
 const int MAX_SLIDES_COUNT = 25;
 const int PRIORITY_QUEUE_SIZE = 100;
@@ -317,7 +317,7 @@ __host__ int calcSlidesCountSqrt(int slidesCount) {
 __global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQueue *q, State *s, int *sSize,
                              int slidesCount, int slidesCountSqrt) {
 
-    int id = threadIdx.x + blockIdx.x;
+    int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
     sSize[id] = 0;
     if (q[id].empty()) {
         return;
@@ -341,7 +341,7 @@ __global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQu
         expand(qi, s + (id*MAX_S_SIZE), sSize[id], *target, slidesCount, slidesCountSqrt);
 }
 __global__ void checkIfTheEndKernel(State *m, PriorityQueue *q, int* result) {
-    int id = threadIdx.x + blockIdx.x;
+    int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
     State* t = q[id].top();
     if (t != nullptr) {
         if (m->f > t->f) {
@@ -350,7 +350,7 @@ __global__ void checkIfTheEndKernel(State *m, PriorityQueue *q, int* result) {
     }
 }
 __global__ void checkExistanceOfNotEmptyQueue(PriorityQueue *q, int* isNotEmptyQueue) {
-    int id = threadIdx.x + blockIdx.x;
+    int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
     if (!q[id].empty()) {
         atomicExch(isNotEmptyQueue, 1);
     }
@@ -373,7 +373,7 @@ bool checkIfTheEndKernelHost(State *devM, PriorityQueue *devQ,int *devIsTheEnd) 
     return isTheEnd;
 }
 __global__ void removeUselessStates(HashMap *h, State *t,int *sSize, int slidesCount) {
-    int id = threadIdx.x + blockIdx.x;
+    int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
     for(int i=id*MAX_S_SIZE;i < id*MAX_S_SIZE + sSize[id];i++) {
         assert(t[i].f != -1);
         State* tmp = h->find(t[i].node, slidesCount);
@@ -382,7 +382,7 @@ __global__ void removeUselessStates(HashMap *h, State *t,int *sSize, int slidesC
     }
 }
 __global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue *q, int slidesCount) {
-    int id = threadIdx.x + blockIdx.x;
+    int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
     for(int i=id*MAX_S_SIZE;i < id*MAX_S_SIZE + sSize[id];i++) {
         if (t[i].f != -1 ) {
             while(true) {
