@@ -9,8 +9,8 @@
 namespace po = boost::program_options;
 using namespace std;
 
-const int BLOCKS_COUNT = 2;
-const int THREADS_PER_BLOCK_COUNT = 4;
+const int BLOCKS_COUNT = 1;
+const int THREADS_PER_BLOCK_COUNT = 1;
 const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
 const int MAX_SLIDES_COUNT = 25;
 const int PRIORITY_QUEUE_SIZE = 100;
@@ -46,15 +46,15 @@ struct Vertex {
     __device__ __host__ int hash(int i, int slidesCount) {
         return (hash1(slidesCount) + i*hash2(slidesCount) ) % H_SIZE;
     }
-    __host__ void print(int slidesCount) {
+    __host__ void print(int slidesCount, ostream& out) {
         for(int i=0;i<slidesCount;i++){
             if (slides[i] == 0)
-                cout<<"_";
-            else cout<<slides[i];
+                out<<"_";
+            else out<<slides[i];
             if (i != slidesCount-1)
-                cout<<",";
+                out<<",";
         }
-        cout << endl;
+        out << endl;
     }
 };
 
@@ -208,8 +208,8 @@ void parse_args(int argc, const char *argv[], Program_spec &program_spec) {
     try {
         desc.add_options()
                 ("version", po::value<std::string>(), "You have to specify version")
-                ("input_data", po::value<std::string>())
-                ("output_data", po::value<std::string>());
+                ("input-data", po::value<std::string>())
+                ("output-data", po::value<std::string>());
         po::variables_map vm;
         store(po::parse_command_line(argc, argv, desc), vm);
         po::notify(vm);
@@ -218,8 +218,8 @@ void parse_args(int argc, const char *argv[], Program_spec &program_spec) {
             exit(0);
         }
         string version = vm["version"].as<string>();
-        string input_file = vm["input_data"].as<string>();
-        string output_file = vm["output_data"].as<string>();
+        string input_file = vm["input-data"].as<string>();
+        string output_file = vm["output-data"].as<string>();
 
         program_spec.in.open(input_file);
         program_spec.out.open(output_file);
@@ -410,23 +410,23 @@ __global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue 
         }
     }
 }
-void printPath(HashMap &h, State &m,Vertex& start, int slidesCount) {
+void printPath(HashMap &h, State &m,Vertex& start, int slidesCount, ostream& out) {
     if (vertexEqual(m.node, start, slidesCount)) {
-        m.node.print(slidesCount);
+        m.node.print(slidesCount, out);
         return;
     }
     State* tmp = h.find(m.prev,slidesCount);
     assert(tmp->f != -1);
-    printPath(h,*tmp,start, slidesCount);
-    m.node.print(slidesCount);
+    printPath(h,*tmp,start, slidesCount, out);
+    m.node.print(slidesCount, out);
 }
 
 void main2(int argc, const char *argv[]) {
     Program_spec result;
-    parse_args(argc, argv, result);
-//    result.in.open("slides/1.in");
-//    result.out.open("dupa");
-//    result.version = sliding;
+//    parse_args(argc, argv, result);
+    result.in.open("slides/2_3.in");
+    result.out.open("output_data");
+    result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
 
     read_slides(result.in, slides, slidesCount);
@@ -480,7 +480,7 @@ void main2(int argc, const char *argv[]) {
                 slidesCount, slidesCountSqrt);
 
         isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
-        int isTheEnd = checkIfTheEndKernelHost(devS, devQ, devIsTheEnd);
+        int isTheEnd = checkIfTheEndKernelHost(devM, devQ, devIsTheEnd);
         if (isTheEnd && isNotEmptyQueue) {
             break;
         }
@@ -493,9 +493,9 @@ void main2(int argc, const char *argv[]) {
     cudaMemcpy(&m, devM, sizeof(State), cudaMemcpyDeviceToHost);
     cudaMemcpy(&h, devH, sizeof(HashMap), cudaMemcpyDeviceToHost);
     if (m.f == INF) {
-        cout << "path not found" << endl;
+        result.out << "path not found" << endl;
     } else {
-        printPath(h, m, start, slidesCount);
+        printPath(h, m, start, slidesCount, result.out);
     }
 
     cudaFree(devStart);

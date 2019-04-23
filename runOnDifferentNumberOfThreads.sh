@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 
-blockCounts=(1 1 3 1 10 100)
+blockCounts=(1 1 3 1 10 30)
 threadPerBlockCounts=(1 3 1 32 32 32)
-for ((i=1;i<6;i+=1))
+for ((i=0;i<6;i+=1))
 do
     cp main.cu main_tmp.cu
     sed -i -E "s/(const int BLOCKS_COUNT = )[0-9]+;/\1${blockCounts[$i]};/" main_tmp.cu
@@ -13,7 +13,8 @@ do
     cat < main_tmp.cu | grep "const int THREADS_PER_BLOCK_COUNT"
     nvcc -std=c++11 -G -g -lboost_program_options main_tmp.cu -o out_script
     echo "run:"
-    ./out_script
+    ./out_script --version sliding --input-data $1 --output-data output_data
+    cat < output_data
     rm main_tmp.cu
     echo "end"
 
