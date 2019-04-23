@@ -28,7 +28,7 @@ struct Vertex {
     }
 
     __device__ Vertex() {}
-    __device__ __host__ unsigned hashBase(int slidesCount, int base) {
+    __device__ __host__ int hashBase(int slidesCount, int base) {
         int result = 0;
         for(int i=0,p=1;i<slidesCount;i++,p=( p * base ) % H_SIZE) {
             result = (result + slides[i]*p) % H_SIZE;
@@ -371,7 +371,7 @@ __global__ void removeUselessStates(HashMap *h, State *t,int *sSize, int slidesC
     for(int i=id*MAX_S_SIZE;i < id*MAX_S_SIZE + sSize[id];i++) {
         assert(t[i].f != -1);
         State* tmp = h->find(t[i].node, slidesCount);
-        if (tmp->g < t[i].g)
+        if (tmp->f != -1 && tmp->g < t[i].g)
             t[i].f = -1;
     }
 }
@@ -381,7 +381,7 @@ __global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue 
         if (t[i].f != -1 ) {
             while(true) {
                 State *tmp = h->find(t[i].node, slidesCount);
-                int lock = atomicExch(&t[i].lock, 0);
+                int lock = atomicExch(&tmp->lock, 0);
                 if (lock) {
                     if (tmp->f == -1 || tmp->g > t[i].g) {
                         *tmp = t[i];
@@ -396,7 +396,7 @@ __global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue 
                             }
                         }
                     }
-                    int lock = atomicExch(&t[i].lock, 1);
+                    int lock = atomicExch(&tmp->lock, 1);
                     assert(lock == 0);
                     break;
                 }
