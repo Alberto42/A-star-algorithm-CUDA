@@ -388,6 +388,7 @@ void main2(int argc, const char *argv[]) {
 
     State m(INF);
     PriorityQueue q[THREADS_COUNT];
+    HashMap h;
     int sSize[THREADS_COUNT], isTheEnd;
     q[0].insert(State(0, f(start, target, slidesCount, slidesCountSqrt), start));
     for(int i=0;i<THREADS_COUNT;i++) {
@@ -397,6 +398,7 @@ void main2(int argc, const char *argv[]) {
     Vertex *devStart, *devTarget;
     State *devM, *devS;
     PriorityQueue *devQ;
+    HashMap *devH;
     int *devSSize, *devIsTheEnd;
 
     cudaMalloc(&devStart, sizeof(Vertex));
@@ -406,24 +408,31 @@ void main2(int argc, const char *argv[]) {
     cudaMalloc(&devS,sizeof(State) * THREADS_COUNT * MAX_S_SIZE);
     cudaMalloc(&devSSize,sizeof(int) * THREADS_COUNT);
     cudaMalloc(&devIsTheEnd, sizeof(int));
+    cudaMalloc(&devH, sizeof(HashMap));
 
     cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice);
     cudaMemcpy(devTarget, &target, sizeof(Vertex), cudaMemcpyHostToDevice);
     cudaMemcpy(devM, &m, sizeof(State), cudaMemcpyHostToDevice);
     cudaMemcpy(devQ, q, sizeof(PriorityQueue) * THREADS_COUNT, cudaMemcpyHostToDevice);
     cudaMemcpy(devSSize, sSize, sizeof(int) * THREADS_COUNT, cudaMemcpyHostToDevice);
+    cudaMemcpy(devH, &h, sizeof(HashMap), cudaMemcpyHostToDevice);
 
-
-    expandKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devStart, devTarget, devM, devQ, devS, devSSize,
-            slidesCount, slidesCountSqrt);
 
     while(true) {
+        expandKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devStart, devTarget, devM, devQ, devS, devSSize,
+                slidesCount, slidesCountSqrt);
+
         isTheEnd = 1;
         cudaMemcpy(devIsTheEnd, &isTheEnd, sizeof(int), cudaMemcpyHostToDevice);
         checkIfTheEndKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devM, devQ, devIsTheEnd);
         cudaMemcpy(&isTheEnd, devIsTheEnd, sizeof(int), cudaMemcpyDeviceToHost);
-        if (isTheEnd)
+        if (isTheEnd) {
             break; //fixme
+        }
+
+        removeUselessStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devS, devSSize, slidesCount);
+
+        insertNewStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devS, devSSize, devQ, slidesCount);
     }
 
     cudaFree(devStart);
@@ -433,6 +442,7 @@ void main2(int argc, const char *argv[]) {
     cudaFree(devS);
     cudaFree(devSSize);
     cudaFree(devIsTheEnd);
+    cudaFree(devH);
 }
 
 int main(int argc, const char *argv[]) {
