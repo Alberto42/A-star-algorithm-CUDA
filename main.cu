@@ -10,11 +10,11 @@ namespace po = boost::program_options;
 using namespace std;
 
 const int BLOCKS_COUNT = 1;
-const int THREADS_PER_BLOCK_COUNT = 1;
+const int THREADS_PER_BLOCK_COUNT = 5;
 const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
 const int MAX_SLIDES_COUNT = 25;
 const int PRIORITY_QUEUE_SIZE = 100;
-const int MAX_S_SIZE = 10;
+const int MAX_S_SIZE = 6;
 const int INF = 1000000000;
 const int H_SIZE = 1024; // It must be the power of 2
 int slidesCount, slidesCountSqrt;
@@ -285,6 +285,8 @@ slidesCountSqrt) {
     for (int i = 0; i < movesCount; i++) {
         int move = empty + moves[i];
         if (move < 0 || move >= slidesCount)
+            continue;
+        if (i < 2 && empty / slidesCountSqrt != move / slidesCountSqrt)
             continue;
         State sTmp = qi; // I hope slides is copied
         sTmp.g = qi.g + 1;
