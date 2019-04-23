@@ -1,1 +1,4 @@
 ./a.out --version slides --input_data slides/1.in --output_data dupa
+
+cat < main.cu | sed -E "s/(const int BLOCKS_COUNT = )[0-9]+;/\115;/"
+cat < main.cu | sed -E "s/(const int THREADS_PER_BLOCK_COUNT = )[0-9]+;/\115;/"
