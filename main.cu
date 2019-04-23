@@ -337,9 +337,34 @@ __global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQu
 __global__ void checkIfTheEndKernel(State *m, PriorityQueue *q, int* result) {
     int id = threadIdx.x + blockIdx.x;
     State* t = q[id].top();
-    if (t != nullptr && m->f > t->f) {
-        atomicExch(result, 0); //fixme: Maybe atomic is not necessary
+    if (t != nullptr) {
+        if (m->f > t->f) {
+            atomicExch(result, 0); //fixme: Maybe atomic is not necessary
+        }
     }
+}
+__global__ void checkExistanceOfNotEmptyQueue(PriorityQueue *q, int* isNotEmptyQueue) {
+    int id = threadIdx.x + blockIdx.x;
+    if (!q[id].empty()) {
+        atomicExch(isNotEmptyQueue, 1);
+    }
+}
+bool checkExistanceOfNotEmptyQueueHost(PriorityQueue *devQ, int* devIsNotEmptyQueue) {
+    int isNotEmptyQueue = 0;
+    cudaMemcpy(devIsNotEmptyQueue, &isNotEmptyQueue, sizeof(int), cudaMemcpyHostToDevice);
+    checkExistanceOfNotEmptyQueue<< < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> >(devQ, devIsNotEmptyQueue);
+    cudaMemcpy(&isNotEmptyQueue, devIsNotEmptyQueue, sizeof(int), cudaMemcpyDeviceToHost);
+    return isNotEmptyQueue;
+}
+bool checkIfTheEndKernelHost(State *devM, PriorityQueue *devQ,int *devIsTheEnd) {
+    int isTheEnd = 1;
+
+    cudaMemcpy(devIsTheEnd, &isTheEnd, sizeof(int), cudaMemcpyHostToDevice);
+
+    checkIfTheEndKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devM, devQ, devIsTheEnd);
+    cudaMemcpy(&isTheEnd, devIsTheEnd, sizeof(int), cudaMemcpyDeviceToHost);
+
+    return isTheEnd;
 }
 __global__ void removeUselessStates(HashMap *h, State *t,int *sSize, int slidesCount) {
     int id = threadIdx.x + blockIdx.x;
@@ -408,7 +433,7 @@ void main2(int argc, const char *argv[]) {
     State m(INF);
     PriorityQueue q[THREADS_COUNT];
     HashMap h;
-    int sSize[THREADS_COUNT], isTheEnd;
+    int sSize[THREADS_COUNT];
     q[0].insert(State(0, f(start, target, slidesCount, slidesCountSqrt), start));
     for(int i=0;i<THREADS_COUNT;i++) {
         sSize[i] = 0;
@@ -418,7 +443,7 @@ void main2(int argc, const char *argv[]) {
     State *devM, *devS;
     PriorityQueue *devQ;
     HashMap *devH;
-    int *devSSize, *devIsTheEnd;
+    int *devSSize, *devIsTheEnd, *devIsNotEmptyQueue;
 
     cudaMalloc(&devStart, sizeof(Vertex));
     cudaMalloc(&devTarget, sizeof(Vertex));
@@ -427,6 +452,7 @@ void main2(int argc, const char *argv[]) {
     cudaMalloc(&devS,sizeof(State) * THREADS_COUNT * MAX_S_SIZE);
     cudaMalloc(&devSSize,sizeof(int) * THREADS_COUNT);
     cudaMalloc(&devIsTheEnd, sizeof(int));
+    cudaMalloc(&devIsNotEmptyQueue, sizeof(int));
     cudaMalloc(&devH, sizeof(HashMap));
 
     cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice);
@@ -438,14 +464,16 @@ void main2(int argc, const char *argv[]) {
 
 
     while(true) {
+        int isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
+        if (!isNotEmptyQueue)
+            break;
+
         expandKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devStart, devTarget, devM, devQ, devS, devSSize,
                 slidesCount, slidesCountSqrt);
 
-        isTheEnd = 1;
-        cudaMemcpy(devIsTheEnd, &isTheEnd, sizeof(int), cudaMemcpyHostToDevice);
-        checkIfTheEndKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devM, devQ, devIsTheEnd);
-        cudaMemcpy(&isTheEnd, devIsTheEnd, sizeof(int), cudaMemcpyDeviceToHost);
-        if (isTheEnd) {
+        isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
+        int isTheEnd = checkIfTheEndKernelHost(devS, devQ, devIsTheEnd);
+        if (isTheEnd && isNotEmptyQueue) {
             break;
         }
 
@@ -456,7 +484,11 @@ void main2(int argc, const char *argv[]) {
 
     cudaMemcpy(&m, devM, sizeof(State), cudaMemcpyDeviceToHost);
     cudaMemcpy(&h, devH, sizeof(HashMap), cudaMemcpyDeviceToHost);
-    printPath(h,m,start,slidesCount);
+    if (m.f == INF) {
+        cout << "path not found" << endl;
+    } else {
+        printPath(h, m, start, slidesCount);
+    }
 
     cudaFree(devStart);
     cudaFree(devTarget);
