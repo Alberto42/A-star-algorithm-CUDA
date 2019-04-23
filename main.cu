@@ -77,10 +77,9 @@ struct State {
 
 struct HashMap {
     State hashmap[H_SIZE];
-    bool available[H_SIZE];
     HashMap() {
         for(int i=0;i<H_SIZE;i++)
-            available[i] = true;
+            hashmap[i].f = -1;
     }
     void insert(const State &s, int slidesCount) {
     }
@@ -88,7 +87,7 @@ struct HashMap {
         for(int i=0;i<H_SIZE;i++) {
             int hash = v.hash(i,slidesCount);
             assert(0 <= hash && hash < H_SIZE);
-            if (available[hash] || vertexEqual(hashmap[hash].node,v, slidesCount))
+            if (hashmap[i].f == -1 || vertexEqual(hashmap[hash].node,v, slidesCount))
                 return &hashmap[hash];
         }
         assert(false);
@@ -123,8 +122,9 @@ __device__ __host__ void swap(int &a, int &b) {
 }
 struct PriorityQueue {
     State A[PRIORITY_QUEUE_SIZE];
+    int lock;
 
-    __device__ PriorityQueue() {}
+    __device__ PriorityQueue():lock(1) {}
 
     int heapSize = 0;
 
@@ -339,6 +339,35 @@ __global__ void removeUselessStates(HashMap *h, State *t,int *sSize, int slidesC
         State* tmp = h->find(t[i].node, slidesCount);
         if (tmp->g < t[i].g)
             t[i].f = -1;
+    }
+}
+__global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue *q, int slidesCount) {
+    int id = threadIdx.x + blockIdx.x;
+    for(int i=id*MAX_S_SIZE;i < id*MAX_S_SIZE + sSize[id];i++) {
+        if (t[i].f != -1 ) {
+            while(true) {
+                State *tmp = h->find(t[i].node, slidesCount);
+                int lock = atomicExch(&t[i].lock, 0);
+                if (lock) {
+                    if (tmp->f == -1 || tmp->g > t[i].g) {
+                        *tmp = t[i];
+                        int hash = tmp->node.hash1(slidesCount) % THREADS_COUNT;
+                        while(true) {
+                            int lock = atomicExch(&q[hash].lock, 0);
+                            if (lock) {
+                                q[hash].insert(t[i]);
+                                int lock = atomicExch(&q[hash].lock, 1);
+                                assert(lock == 0);
+                                break;
+                            }
+                        }
+                    }
+                    int lock = atomicExch(&t[i].lock, 1);
+                    assert(lock == 0);
+                    break;
+                }
+            }
+        }
     }
 }
 
