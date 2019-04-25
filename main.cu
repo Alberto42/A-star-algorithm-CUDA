@@ -17,7 +17,9 @@ const int PRIORITY_QUEUE_SIZE = 100;
 const int MAX_S_SIZE = 6;
 const int INF = 1000000000;
 const int H_SIZE = 1024; // It must be the power of 2
+const int H_SIZE_DEDUPLICATE = 1024;
 const int Q_CANDIDATES_COUNT = 100;
+const int HASH_FUNCTIONS_COUNT = 5; // must be smaller or equal to H_SIZE_DEDUPLICATE
 int slidesCount, slidesCountSqrt;
 
 struct Vertex {
@@ -84,9 +86,30 @@ struct State {
         this->prev = that.prev;
         return *this;
     }
+
+    __device__ __host__ int hashBase(int slidesCount, int base) {
+        int result = 0;
+        int p=1;
+        for(int i=0;i<slidesCount;i++,p=( p * base ) % H_SIZE_DEDUPLICATE) {
+            result = (result + node.slides[i]*p) % H_SIZE_DEDUPLICATE;
+        }
+        result = (result + this->g*p) % H_SIZE_DEDUPLICATE;
+        return result;
+    }
+    __device__ __host__ int hash1(int slidesCount) {
+        return this->hashBase(slidesCount, 30);
+    }
+    __device__ __host__ int hash2(int slidesCount) {
+        int hash = this->hashBase(slidesCount, 29);
+        hash = hash % 2 ? hash : (hash + 1) % H_SIZE_DEDUPLICATE;
+        return hash;
+    }
+    __device__ __host__ int hash(int i, int slidesCount) {
+        return (hash1(slidesCount) + i*hash2(slidesCount) ) % H_SIZE_DEDUPLICATE;
+    }
 };
 
-struct HashMap {
+struct HashMap  {
     State hashmap[H_SIZE];
     HashMap() {
         for(int i=0;i<H_SIZE;i++)
@@ -106,6 +129,23 @@ struct HashMap {
     __device__ __host__ void insert(State& s, int slidesCount) {
         State* tmp = this->find(s.node, slidesCount);
         *tmp = s;
+    }
+};
+struct HashMapDeduplicate {
+    int hashmap[H_SIZE_DEDUPLICATE];
+    HashMapDeduplicate() {
+        for(int i=0;i<H_SIZE_DEDUPLICATE;i++)
+            hashmap[i] = -1;
+    }
+    __device__ int find(State& item, int slidesCount, State* s) {
+        for(int i=0;i<HASH_FUNCTIONS_COUNT;i++) {
+            int hash = item.hash(i, slidesCount);
+            assert(0 <= hash && hash < H_SIZE_DEDUPLICATE);
+            if (hashmap[i] == -1 || (vertexEqual(s[hashmap[hash]].node,item.node, slidesCount) && s[hashmap[hash]].g
+            ==item.g) );
+                return i;
+        }
+        return 0;
     }
 };
 enum Version {
@@ -320,6 +360,8 @@ __global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQu
 
     int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
     sSize[id] = 0;
+    for(int i=id*MAX_S_SIZE;i<(id+1)*MAX_S_SIZE;i++)
+        s[i].f = -1;
     if (q[id].empty()) {
         return;
     }
@@ -340,6 +382,31 @@ __global__ void improveMKernel(State *m, State *qiCandidates, int *qiCandidatesC
         }
     }
     *qiCandidatesCount = -1;
+}
+__global__ void deduplicateKernel(State *s, int *sSize, State *t, HashMapDeduplicate *h, int slidesCount) {
+    int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
+    for(int i=id*MAX_S_SIZE;i<(id+1)*MAX_S_SIZE;i++) {
+        t[i] = s[i];
+    }
+    for(int i=id*MAX_S_SIZE,i2=0;i < (id+1)*MAX_S_SIZE && i2 < sSize[id];i++, i2++) {
+        int z = h->find(s[i],slidesCount, s);
+        int hash = s[i].hash(z, slidesCount);
+
+        int t_tmp = atomicExch(h->hashmap+hash, i);
+        if (t_tmp != -1 && vertexEqual(s[t_tmp].node, s[i].node, slidesCount) && s[t_tmp].g == s[i].g ) {
+            t[i].f = -1;
+            continue;
+        }
+    }
+
+}
+void deduplicateKernelHost(State *devS, int *devSSize, State *devT, HashMapDeduplicate *devHD, int slidesCount) {
+
+    HashMapDeduplicate hD;
+    cudaMemcpy(devHD, &hD, sizeof(HashMapDeduplicate), cudaMemcpyHostToDevice);
+    deduplicateKernel <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devS,devSSize, devT,devHD,slidesCount);
+    cudaMemcpy(&hD, devHD, sizeof(HashMapDeduplicate), cudaMemcpyDeviceToHost);
+
 }
 __global__ void checkIfTheEndKernel(State *m, PriorityQueue *q, int* result) {
     int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
@@ -449,9 +516,10 @@ void main2(int argc, const char *argv[]) {
     h.insert(startState, slidesCount);
 
     Vertex *devStart, *devTarget;
-    State *devM, *devS, *devQiCandidates;
+    State *devM, *devS, *devT, *devQiCandidates;
     PriorityQueue *devQ;
     HashMap *devH;
+    HashMapDeduplicate *devHD;
     int *devSSize, *devIsTheEnd, *devIsNotEmptyQueue, *devQiCandidatesCount;
 
     cudaMalloc(&devStart, sizeof(Vertex));
@@ -459,12 +527,14 @@ void main2(int argc, const char *argv[]) {
     cudaMalloc(&devM,sizeof(State));
     cudaMalloc(&devQ,sizeof(PriorityQueue) * THREADS_COUNT);
     cudaMalloc(&devS,sizeof(State) * THREADS_COUNT * MAX_S_SIZE);
+    cudaMalloc(&devT,sizeof(State) * THREADS_COUNT * MAX_S_SIZE);
     cudaMalloc(&devSSize,sizeof(int) * THREADS_COUNT);
     cudaMalloc(&devIsTheEnd, sizeof(int));
     cudaMalloc(&devIsNotEmptyQueue, sizeof(int));
     cudaMalloc(&devQiCandidatesCount, sizeof(int));
     cudaMalloc(&devQiCandidates, sizeof(State) * Q_CANDIDATES_COUNT);
     cudaMalloc(&devH, sizeof(HashMap));
+    cudaMalloc(&devHD, sizeof(HashMapDeduplicate));
 
     cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice);
     cudaMemcpy(devTarget, &target, sizeof(Vertex), cudaMemcpyHostToDevice);
@@ -489,6 +559,8 @@ void main2(int argc, const char *argv[]) {
         if (isTheEnd && isNotEmptyQueue) {
             break;
         }
+
+        deduplicateKernelHost(devS,devSSize, devT, devHD, slidesCount);
 
         removeUselessStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devS, devSSize, slidesCount);
 
