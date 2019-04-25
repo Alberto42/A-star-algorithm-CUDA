@@ -388,7 +388,7 @@ __global__ void deduplicateKernel(State *s, int *sSize, State *t, HashMapDedupli
     for(int i=id*MAX_S_SIZE;i<(id+1)*MAX_S_SIZE;i++) {
         t[i] = s[i];
     }
-    for(int i=id*MAX_S_SIZE,i2=0;i < (id+1)*MAX_S_SIZE && i2 < sSize[id];i++, i2++) {
+    for(int i=id*MAX_S_SIZE;i < id*MAX_S_SIZE + sSize[id];i++) {
         int z = h->find(s[i],slidesCount, s);
         int hash = s[i].hash(z, slidesCount);
 
@@ -443,36 +443,37 @@ bool checkIfTheEndKernelHost(State *devM, PriorityQueue *devQ,int *devIsTheEnd) 
 __global__ void removeUselessStates(HashMap *h, State *t,int *sSize, int slidesCount) {
     int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
     for(int i=id*MAX_S_SIZE;i < id*MAX_S_SIZE + sSize[id];i++) {
-        assert(t[i].f != -1);
+        if (t[i].f == -1)
+            continue;
         State* tmp = h->find(t[i].node, slidesCount);
         if (tmp->f != -1 && tmp->g < t[i].g)
             t[i].f = -1;
     }
 }
-__global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue *q, int slidesCount) {
+__global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue *q,Vertex *target, int slidesCount,
+        int slidesCountSqrt) {
     int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
-    for(int i=id*MAX_S_SIZE;i < id*MAX_S_SIZE + sSize[id];i++) {
-        if (t[i].f != -1 ) {
-            while(true) {
-                State *tmp = h->find(t[i].node, slidesCount);
-                int lock = atomicExch(&tmp->lock, 0);
-                if (lock) {
-                    if (tmp->f == -1 || tmp->g > t[i].g) {
+    for(int i=id;i < THREADS_COUNT * MAX_S_SIZE;i+=THREADS_COUNT) {
+        if (t[i].f != -1) {
+            t[i].f = f(t[i].node, *target, slidesCount,slidesCountSqrt);
+            q[id].insert(t[i]);
+        }
+    }
+    if (id % THREADS_PER_BLOCK_COUNT == 0) {
+        for(int i=id*MAX_S_SIZE;i< (id + THREADS_PER_BLOCK_COUNT)*MAX_S_SIZE;i++) {
+            if (t[i].f != -1) {
+                while(true) {
+                    State *tmp = h->find(t[i].node, slidesCount);
+
+                    int lock = atomicExch(&tmp->lock, 0);
+                    if (lock) {
+                        assert (tmp->f == -1 || tmp->g > t[i].g);
                         *tmp = t[i];
-                        int hash = tmp->node.hash1(slidesCount) % THREADS_COUNT;
-                        while(true) {
-                            int lock = atomicExch(&q[hash].lock, 0);
-                            if (lock) {
-                                q[hash].insert(t[i]);
-                                int lock = atomicExch(&q[hash].lock, 1);
-                                assert(lock == 0);
-                                break;
-                            }
-                        }
+
+                        int lock = atomicExch(&tmp->lock, 1);
+                        assert(lock == 0);
+                        break;
                     }
-                    int lock = atomicExch(&tmp->lock, 1);
-                    assert(lock == 0);
-                    break;
                 }
             }
         }
@@ -562,9 +563,10 @@ void main2(int argc, const char *argv[]) {
 
         deduplicateKernelHost(devS,devSSize, devT, devHD, slidesCount);
 
-        removeUselessStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devS, devSSize, slidesCount);
+        removeUselessStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devT, devSSize, slidesCount);
 
-        insertNewStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devS, devSSize, devQ, slidesCount);
+        insertNewStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devS, devSSize, devQ, devTarget,slidesCount,
+                slidesCountSqrt);
     }
 
     cudaMemcpy(&m, devM, sizeof(State), cudaMemcpyDeviceToHost);
