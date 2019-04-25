@@ -9,8 +9,8 @@
 namespace po = boost::program_options;
 using namespace std;
 
-const int BLOCKS_COUNT = 2;
-const int THREADS_PER_BLOCK_COUNT = 1;
+const int BLOCKS_COUNT = 30;
+const int THREADS_PER_BLOCK_COUNT = 32;
 const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
 const int MAX_SLIDES_COUNT = 25;
 const int PRIORITY_QUEUE_SIZE = 100;
@@ -19,7 +19,7 @@ const int INF = 1000000000;
 const int H_SIZE = 1024; // It must be the power of 2
 const int H_SIZE_DEDUPLICATE = 1024;
 const int Q_CANDIDATES_COUNT = 100;
-const int HASH_FUNCTIONS_COUNT = 5; // must be smaller or equal to H_SIZE_DEDUPLICATE
+const int HASH_FUNCTIONS_COUNT = 10; // must be smaller or equal to H_SIZE_DEDUPLICATE
 int slidesCount, slidesCountSqrt;
 
 struct Vertex {
@@ -457,24 +457,19 @@ __global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue 
         if (t[i].f != -1) {
             t[i].f = f(t[i].node, *target, slidesCount,slidesCountSqrt);
             q[id].insert(t[i]);
-        }
-    }
-    if (id % THREADS_PER_BLOCK_COUNT == 0) {
-        for(int i=id*MAX_S_SIZE;i< (id + THREADS_PER_BLOCK_COUNT)*MAX_S_SIZE;i++) {
-            if (t[i].f != -1) {
-                while(true) {
-                    State *tmp = h->find(t[i].node, slidesCount);
-
-                    int lock = atomicExch(&tmp->lock, 0);
+            for(int j=0;j<H_SIZE;j++) {
+                int hash = t[i].hash(j,slidesCount);
+                assert(0 <= hash && hash < H_SIZE);
+                if (h->hashmap[hash].f == -1 || vertexEqual(h->hashmap[hash].node,t[i].node, slidesCount)) {
+                    int lock = atomicExch(&h->hashmap[hash].lock, 0);
                     if (lock) {
-                        assert (tmp->f == -1 || tmp->g > t[i].g);
-                        *tmp = t[i];
-
-                        int lock = atomicExch(&tmp->lock, 1);
+                        h->hashmap[hash] = t[i];
+                        int lock = atomicExch(&h->hashmap[hash].lock, 1);
                         assert(lock == 0);
                         break;
                     }
                 }
+                assert(j != H_SIZE -1);
             }
         }
     }
