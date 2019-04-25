@@ -178,7 +178,7 @@ struct PriorityQueue {
     State A[PRIORITY_QUEUE_SIZE];
     int lock;
 
-    __device__ PriorityQueue():lock(1) {}
+    __device__ __host__ PriorityQueue():lock(1) {}
 
     int heapSize = 0;
 
@@ -501,11 +501,11 @@ void main2(int argc, const char *argv[]) {
     Vertex target(slides);
 
     State m(INF), qiCandidates[Q_CANDIDATES_COUNT];
-    PriorityQueue q[THREADS_COUNT];
+    PriorityQueue q;
     HashMap h;
     int sSize[THREADS_COUNT], qiCandidatesCount=0;
     State startState = State(0, f(start, target, slidesCount, slidesCountSqrt), start);
-    q[0].insert(startState);
+    q.insert(startState);
     for(int i=0;i<THREADS_COUNT;i++) {
         sSize[i] = 0;
     }
@@ -535,7 +535,7 @@ void main2(int argc, const char *argv[]) {
     cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice);
     cudaMemcpy(devTarget, &target, sizeof(Vertex), cudaMemcpyHostToDevice);
     cudaMemcpy(devM, &m, sizeof(State), cudaMemcpyHostToDevice);
-    cudaMemcpy(devQ, q, sizeof(PriorityQueue) * THREADS_COUNT, cudaMemcpyHostToDevice);
+    cudaMemcpy(devQ, &q, sizeof(PriorityQueue), cudaMemcpyHostToDevice);
     cudaMemcpy(devSSize, sSize, sizeof(int) * THREADS_COUNT, cudaMemcpyHostToDevice);
     cudaMemcpy(devH, &h, sizeof(HashMap), cudaMemcpyHostToDevice);
     cudaMemcpy(devQiCandidatesCount, &qiCandidatesCount, sizeof(int), cudaMemcpyHostToDevice);
