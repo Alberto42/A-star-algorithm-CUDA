@@ -17,6 +17,7 @@ const int PRIORITY_QUEUE_SIZE = 100;
 const int MAX_S_SIZE = 6;
 const int INF = 1000000000;
 const int H_SIZE = 1024; // It must be the power of 2
+const int Q_CANDIDATES_COUNT = 100;
 int slidesCount, slidesCountSqrt;
 
 struct Vertex {
@@ -292,7 +293,7 @@ slidesCountSqrt) {
         sTmp.g = qi.g + 1;
 
         swap(sTmp.node.slides[empty], sTmp.node.slides[move]);
-        sTmp.f = f(sTmp.node, target, slidesCount, slidesCountSqrt);
+        sTmp.f = -2;
         sTmp.prev = qi.node;
         sTmp.lock = 1;
         assert(sSize < MAX_S_SIZE);
@@ -314,8 +315,8 @@ __host__ int calcSlidesCountSqrt(int slidesCount) {
     return slidesCountSqrt;
 }
 
-__global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQueue *q, State *s, int *sSize,
-                             int slidesCount, int slidesCountSqrt) {
+__global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQueue *q, State *s, int *sSize,State
+*qiCandidates, int *qiCandidatesCount, int slidesCount, int slidesCountSqrt) {
 
     int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
     sSize[id] = 0;
@@ -325,20 +326,20 @@ __global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQu
     State qi = q[id].pop();
 
     if (vertexEqual(qi.node,*target,slidesCount) ) {
-        while (true) {
-            int lock = atomicExch(&m->lock, 0);
-            if (lock == 1) {
-                if (qi.f < m->f) {
-                    *m = qi;
-                }
-                lock = atomicExch(&m->lock, 1);
-                assert(lock == 0);
-                break;
-            } else
-                continue;
+        if (qi.f < m->f) {
+            int tmp = atomicAdd(qiCandidatesCount, 1);
+            qiCandidates[tmp] = qi;
         }
     } else
         expand(qi, s + (id*MAX_S_SIZE), sSize[id], *target, slidesCount, slidesCountSqrt);
+}
+__global__ void improveMKernel(State *m, State *qiCandidates, int *qiCandidatesCount) {
+    for(int i=0;i<*qiCandidatesCount;i++) {
+        if (qiCandidates[i].f < m->f) {
+            *m = qiCandidates[i];
+        }
+    }
+    *qiCandidatesCount = -1;
 }
 __global__ void checkIfTheEndKernel(State *m, PriorityQueue *q, int* result) {
     int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
@@ -436,10 +437,10 @@ void main2(int argc, const char *argv[]) {
     read_slides(result.in, slides, slidesCount);
     Vertex target(slides);
 
-    State m(INF);
+    State m(INF), qiCandidates[Q_CANDIDATES_COUNT];
     PriorityQueue q[THREADS_COUNT];
     HashMap h;
-    int sSize[THREADS_COUNT];
+    int sSize[THREADS_COUNT], qiCandidatesCount=-1;
     State startState = State(0, f(start, target, slidesCount, slidesCountSqrt), start);
     q[0].insert(startState);
     for(int i=0;i<THREADS_COUNT;i++) {
@@ -448,10 +449,10 @@ void main2(int argc, const char *argv[]) {
     h.insert(startState, slidesCount);
 
     Vertex *devStart, *devTarget;
-    State *devM, *devS;
+    State *devM, *devS, *devQiCandidates;
     PriorityQueue *devQ;
     HashMap *devH;
-    int *devSSize, *devIsTheEnd, *devIsNotEmptyQueue;
+    int *devSSize, *devIsTheEnd, *devIsNotEmptyQueue, *devQiCandidatesCount;
 
     cudaMalloc(&devStart, sizeof(Vertex));
     cudaMalloc(&devTarget, sizeof(Vertex));
@@ -461,6 +462,8 @@ void main2(int argc, const char *argv[]) {
     cudaMalloc(&devSSize,sizeof(int) * THREADS_COUNT);
     cudaMalloc(&devIsTheEnd, sizeof(int));
     cudaMalloc(&devIsNotEmptyQueue, sizeof(int));
+    cudaMalloc(&devQiCandidatesCount, sizeof(int));
+    cudaMalloc(&devQiCandidates, sizeof(State) * Q_CANDIDATES_COUNT);
     cudaMalloc(&devH, sizeof(HashMap));
 
     cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice);
@@ -469,6 +472,7 @@ void main2(int argc, const char *argv[]) {
     cudaMemcpy(devQ, q, sizeof(PriorityQueue) * THREADS_COUNT, cudaMemcpyHostToDevice);
     cudaMemcpy(devSSize, sSize, sizeof(int) * THREADS_COUNT, cudaMemcpyHostToDevice);
     cudaMemcpy(devH, &h, sizeof(HashMap), cudaMemcpyHostToDevice);
+    cudaMemcpy(devQiCandidatesCount, &qiCandidatesCount, sizeof(int), cudaMemcpyHostToDevice);
 
 
     while(true) {
@@ -477,7 +481,8 @@ void main2(int argc, const char *argv[]) {
             break;
 
         expandKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devStart, devTarget, devM, devQ, devS, devSSize,
-                slidesCount, slidesCountSqrt);
+                devQiCandidates, devQiCandidatesCount, slidesCount, slidesCountSqrt);
+        improveMKernel <<< 1, 1 >>> (devM,devQiCandidates, devQiCandidatesCount);
 
         isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
         int isTheEnd = checkIfTheEndKernelHost(devM, devQ, devIsTheEnd);
