@@ -10,7 +10,7 @@ namespace po = boost::program_options;
 using namespace std;
 
 const int BLOCKS_COUNT = 1;
-const int THREADS_PER_BLOCK_COUNT = 1;
+const int THREADS_PER_BLOCK_COUNT = 2;
 const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
 const int MAX_SLIDES_COUNT = 25;
 const int PRIORITY_QUEUE_SIZE = 100;
@@ -120,7 +120,7 @@ struct HashMap  {
         for(int i=0;i<H_SIZE;i++) {
             int hash = v.hash(i,slidesCount);
             assert(0 <= hash && hash < H_SIZE);
-            if (hashmap[i].f == -1 || vertexEqual(hashmap[hash].node,v, slidesCount))
+            if (hashmap[hash].f == -1 || vertexEqual(hashmap[hash].node,v, slidesCount))
                 return &hashmap[hash];
         }
         assert(false);
@@ -141,7 +141,7 @@ struct HashMapDeduplicate {
         for(int i=0;i<HASH_FUNCTIONS_COUNT;i++) {
             int hash = item.hash(i, slidesCount);
             assert(0 <= hash && hash < H_SIZE_DEDUPLICATE);
-            if (hashmap[i] == -1 || (vertexEqual(s[hashmap[hash]].node,item.node, slidesCount) && s[hashmap[hash]].g
+            if (hashmap[hash] == -1 || (vertexEqual(s[hashmap[hash]].node,item.node, slidesCount) && s[hashmap[hash]].g
             ==item.g) );
                 return i;
         }
@@ -488,7 +488,7 @@ void printPath(HashMap &h, State &m,Vertex& start, int slidesCount, ostream& out
 void main2(int argc, const char *argv[]) {
     Program_spec result;
 //    parse_args(argc, argv, result);
-    result.in.open("slides/2_1.in");
+    result.in.open("slides/3_2.in");
     result.out.open("output_data");
     result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
