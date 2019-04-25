@@ -9,7 +9,7 @@
 namespace po = boost::program_options;
 using namespace std;
 
-const int BLOCKS_COUNT = 1;
+const int BLOCKS_COUNT = 2;
 const int THREADS_PER_BLOCK_COUNT = 1;
 const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
 const int MAX_SLIDES_COUNT = 25;
@@ -381,7 +381,7 @@ __global__ void improveMKernel(State *m, State *qiCandidates, int *qiCandidatesC
             *m = qiCandidates[i];
         }
     }
-    *qiCandidatesCount = -1;
+    *qiCandidatesCount = 0;
 }
 __global__ void deduplicateKernel(State *s, int *sSize, State *t, HashMapDeduplicate *h, int slidesCount) {
     int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
@@ -493,7 +493,7 @@ void printPath(HashMap &h, State &m,Vertex& start, int slidesCount, ostream& out
 void main2(int argc, const char *argv[]) {
     Program_spec result;
 //    parse_args(argc, argv, result);
-    result.in.open("slides/2_3.in");
+    result.in.open("slides/1.in");
     result.out.open("output_data");
     result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
@@ -508,7 +508,7 @@ void main2(int argc, const char *argv[]) {
     State m(INF), qiCandidates[Q_CANDIDATES_COUNT];
     PriorityQueue q[THREADS_COUNT];
     HashMap h;
-    int sSize[THREADS_COUNT], qiCandidatesCount=-1;
+    int sSize[THREADS_COUNT], qiCandidatesCount=0;
     State startState = State(0, f(start, target, slidesCount, slidesCountSqrt), start);
     q[0].insert(startState);
     for(int i=0;i<THREADS_COUNT;i++) {
@@ -585,6 +585,9 @@ void main2(int argc, const char *argv[]) {
     cudaFree(devSSize);
     cudaFree(devIsTheEnd);
     cudaFree(devH);
+    cudaFree(devHD);
+    cudaFree(devQiCandidates);
+    cudaFree(devQiCandidatesCount);
 }
 
 int main(int argc, const char *argv[]) {
