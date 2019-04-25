@@ -9,8 +9,8 @@
 namespace po = boost::program_options;
 using namespace std;
 
-const int BLOCKS_COUNT = 30;
-const int THREADS_PER_BLOCK_COUNT = 32;
+const int BLOCKS_COUNT = 1;
+const int THREADS_PER_BLOCK_COUNT = 1;
 const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
 const int MAX_SLIDES_COUNT = 25;
 const int PRIORITY_QUEUE_SIZE = 100;
@@ -458,7 +458,7 @@ __global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue 
             t[i].f = f(t[i].node, *target, slidesCount,slidesCountSqrt);
             q[id].insert(t[i]);
             for(int j=0;j<H_SIZE;j++) {
-                int hash = t[i].hash(j,slidesCount);
+                int hash = t[i].node.hash(j,slidesCount);
                 assert(0 <= hash && hash < H_SIZE);
                 if (h->hashmap[hash].f == -1 || vertexEqual(h->hashmap[hash].node,t[i].node, slidesCount)) {
                     int lock = atomicExch(&h->hashmap[hash].lock, 0);
@@ -488,7 +488,7 @@ void printPath(HashMap &h, State &m,Vertex& start, int slidesCount, ostream& out
 void main2(int argc, const char *argv[]) {
     Program_spec result;
 //    parse_args(argc, argv, result);
-    result.in.open("slides/1.in");
+    result.in.open("slides/2_1.in");
     result.out.open("output_data");
     result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
@@ -545,22 +545,18 @@ void main2(int argc, const char *argv[]) {
         int isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
         if (!isNotEmptyQueue)
             break;
-
+        int isTheEnd = checkIfTheEndKernelHost(devM, devQ, devIsTheEnd);
+        if (isTheEnd)
+            break;
         expandKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devStart, devTarget, devM, devQ, devS, devSSize,
                 devQiCandidates, devQiCandidatesCount, slidesCount, slidesCountSqrt);
         improveMKernel <<< 1, 1 >>> (devM,devQiCandidates, devQiCandidatesCount);
-
-        isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
-        int isTheEnd = checkIfTheEndKernelHost(devM, devQ, devIsTheEnd);
-        if (isTheEnd && isNotEmptyQueue) {
-            break;
-        }
 
         deduplicateKernelHost(devS,devSSize, devT, devHD, slidesCount);
 
         removeUselessStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devT, devSSize, slidesCount);
 
-        insertNewStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devS, devSSize, devQ, devTarget,slidesCount,
+        insertNewStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devT, devSSize, devQ, devTarget,slidesCount,
                 slidesCountSqrt);
     }
 
