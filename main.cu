@@ -5,6 +5,7 @@
 #include <boost/program_options.hpp>
 #include <regex>
 #include <cmath>
+#include <time.h>
 
 namespace po = boost::program_options;
 using namespace std;
@@ -16,7 +17,7 @@ const int MAX_SLIDES_COUNT = 25;
 const int PRIORITY_QUEUE_SIZE = 10;
 const int MAX_S_SIZE = 6;
 const int INF = 1000000000;
-const int H_SIZE = 16384*8; // It must be the power of 2
+const int H_SIZE = 16384; // It must be the power of 2
 const int H_SIZE_DEDUPLICATE = 1024; // change to long ints
 const int Q_CANDIDATES_COUNT = 100;
 const int HASH_FUNCTIONS_COUNT = 10; // must be smaller or equal to H_SIZE_DEDUPLICATE
@@ -488,10 +489,10 @@ void printPath(HashMap &h, State &m,Vertex& start, int slidesCount, ostream& out
 
 void main2(int argc, const char *argv[]) {
     Program_spec result;
-//    parse_args(argc, argv, result);
-    result.in.open("dupa");
-    result.out.open("output_data");
-    result.version = sliding;
+    parse_args(argc, argv, result);
+//    result.in.open("dupa");
+//    result.out.open("output_data");
+//    result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
 
     read_slides(result.in, slides, slidesCount);
@@ -541,6 +542,10 @@ void main2(int argc, const char *argv[]) {
     cudaMemcpy(devH, &h, sizeof(HashMap), cudaMemcpyHostToDevice);
     cudaMemcpy(devQiCandidatesCount, &qiCandidatesCount, sizeof(int), cudaMemcpyHostToDevice);
 
+    cudaEvent_t start_t, stop_t;
+    cudaEventCreate(&start_t);
+    cudaEventCreate(&stop_t);
+    cudaEventRecord(start_t, 0);
 
     while(true) {
         int isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
@@ -564,14 +569,22 @@ void main2(int argc, const char *argv[]) {
                 slidesCountSqrt);
     }
 
+    cudaEventRecord(stop_t, 0);
+
     cudaMemcpy(&m, devM, sizeof(State), cudaMemcpyDeviceToHost);
     cudaMemcpy(&h, devH, sizeof(HashMap), cudaMemcpyDeviceToHost);
-    result.out << "42" << endl;
+
+    float elapsedTime;
+    cudaEventElapsedTime(&elapsedTime, start_t, stop_t);
+
+    result.out << elapsedTime << endl;
     if (m.f == INF) {
     } else {
         printPath(h, m, start, slidesCount, result.out);
     }
 
+    cudaEventDestroy(start_t);
+    cudaEventDestroy(stop_t);
     cudaFree(devStart);
     cudaFree(devTarget);
     cudaFree(devM);
