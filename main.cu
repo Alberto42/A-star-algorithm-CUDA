@@ -240,7 +240,7 @@ struct PriorityQueue {
     }
 
     __device__ State* top() {
-        return (!this->empty()) ? A : nullptr;
+        return (!this->empty()) ? A+1 : nullptr;
     }
 };
 
@@ -487,10 +487,10 @@ void printPath(HashMap &h, State &m,Vertex& start, int slidesCount, ostream& out
 
 void main2(int argc, const char *argv[]) {
     Program_spec result;
-    parse_args(argc, argv, result);
-//    result.in.open("dupa");
-//    result.out.open("output_data");
-//    result.version = sliding;
+//    parse_args(argc, argv, result);
+    result.in.open("dupa");
+    result.out.open("output_data");
+    result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
 
     read_slides(result.in, slides, slidesCount);
@@ -545,12 +545,15 @@ void main2(int argc, const char *argv[]) {
         int isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
         if (!isNotEmptyQueue)
             break;
-        int isTheEnd = checkIfTheEndKernelHost(devM, devQ, devIsTheEnd);
-        if (isTheEnd)
-            break;
+
         expandKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devStart, devTarget, devM, devQ, devS, devSSize,
                 devQiCandidates, devQiCandidatesCount, slidesCount, slidesCountSqrt);
         improveMKernel <<< 1, 1 >>> (devM,devQiCandidates, devQiCandidatesCount);
+
+        isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
+        int isTheEnd = checkIfTheEndKernelHost(devM, devQ, devIsTheEnd);
+        if (isTheEnd && isNotEmptyQueue)
+            break;
 
         deduplicateKernelHost(devS,devSSize, devT, devHD, slidesCount);
 
