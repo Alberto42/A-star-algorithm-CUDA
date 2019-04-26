@@ -2,3 +2,8 @@
 
 cat < main.cu | sed -E "s/(const int BLOCKS_COUNT = )[0-9]+;/\115;/"
 cat < main.cu | sed -E "s/(const int THREADS_PER_BLOCK_COUNT = )[0-9]+;/\115;/"
+
+
+../astar_gpu --version slides --input-data tests/sliding_test_2.in --output-data output_data
+
+g++ -std=c++14 sliding_test.cpp -o sliding_test

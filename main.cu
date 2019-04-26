@@ -16,7 +16,7 @@ const int MAX_SLIDES_COUNT = 25;
 const int PRIORITY_QUEUE_SIZE = 100;
 const int MAX_S_SIZE = 6;
 const int INF = 1000000000;
-const int H_SIZE = 1024; // It must be the power of 2
+const int H_SIZE = 2048; // It must be the power of 2
 const int H_SIZE_DEDUPLICATE = 1024;
 const int Q_CANDIDATES_COUNT = 100;
 const int HASH_FUNCTIONS_COUNT = 10; // must be smaller or equal to H_SIZE_DEDUPLICATE
@@ -455,7 +455,7 @@ __global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue 
     int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
     for(int i=id;i < THREADS_COUNT * MAX_S_SIZE;i+=THREADS_COUNT) {
         if (t[i].f != -1) {
-            t[i].f = f(t[i].node, *target, slidesCount,slidesCountSqrt);
+            t[i].f = t[i].g + f(t[i].node, *target, slidesCount,slidesCountSqrt);
             q[id].insert(t[i]);
             for(int j=0;j<H_SIZE;j++) {
                 int hash = t[i].node.hash(j,slidesCount);
@@ -487,10 +487,10 @@ void printPath(HashMap &h, State &m,Vertex& start, int slidesCount, ostream& out
 
 void main2(int argc, const char *argv[]) {
     Program_spec result;
-//    parse_args(argc, argv, result);
-    result.in.open("slides/3_5.in");
-    result.out.open("output_data");
-    result.version = sliding;
+    parse_args(argc, argv, result);
+//    result.in.open("dupa");
+//    result.out.open("output_data");
+//    result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
 
     read_slides(result.in, slides, slidesCount);
@@ -562,8 +562,8 @@ void main2(int argc, const char *argv[]) {
 
     cudaMemcpy(&m, devM, sizeof(State), cudaMemcpyDeviceToHost);
     cudaMemcpy(&h, devH, sizeof(HashMap), cudaMemcpyDeviceToHost);
+    result.out << "42" << endl;
     if (m.f == INF) {
-        result.out << "path not found" << endl;
     } else {
         printPath(h, m, start, slidesCount, result.out);
     }
