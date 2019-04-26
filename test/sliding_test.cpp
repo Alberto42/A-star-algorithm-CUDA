@@ -9,7 +9,7 @@
 #include <map>
 
 #ifndef N
-#define N 3
+#define N 4
 #endif
 
 struct State

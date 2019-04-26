@@ -14,11 +14,11 @@ const int BLOCKS_COUNT = 1000;
 const int THREADS_PER_BLOCK_COUNT = 32;
 const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
 const int MAX_SLIDES_COUNT = 25;
-const int PRIORITY_QUEUE_SIZE = 100;
-const int MAX_S_SIZE = 6;
+const int PRIORITY_QUEUE_SIZE = 1000;
+const int MAX_S_SIZE = 4;
 const int INF = 1000000000;
-const int H_SIZE = 1048576; // It must be the power of 2
-const int H_SIZE_DEDUPLICATE = 1048576; // change to long ints
+const int H_SIZE = 1048576*4; // It must be the power of 2
+const int H_SIZE_DEDUPLICATE = 4096; // change to long ints
 const int Q_CANDIDATES_COUNT = 100;
 const int HASH_FUNCTIONS_COUNT = 10; // must be smaller or equal to H_SIZE_DEDUPLICATE
 int slidesCount, slidesCountSqrt;
@@ -407,7 +407,7 @@ void deduplicateKernelHost(State *devS, int *devSSize, State *devT, HashMapDedup
     HashMapDeduplicate hD;
     cudaMemcpy(devHD, &hD, sizeof(HashMapDeduplicate), cudaMemcpyHostToDevice);
     deduplicateKernel <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devS,devSSize, devT,devHD,slidesCount);
-    cudaMemcpy(&hD, devHD, sizeof(HashMapDeduplicate), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&hD, devHD, sizeof(HashMapDeduplicate), cudaMemcpyDeviceToHost); //fixme: useless ?
 
 }
 __global__ void checkIfTheEndKernel(State *m, PriorityQueue *q, int* result) {
