@@ -9,7 +9,7 @@ do
     OUTPUT_DATA_PATH="tests/sliding_test_${i}.out"
     OUTPUT_DATA_TEST_PATH="tests/sliding_test_${i}.test_out"
 
-    python3 sliding_generate_mine.py 3 $i 30 > ${INPUT_DATA_PATH}
+    python3 sliding_generate_mine.py 3 $i 50 > ${INPUT_DATA_PATH}
     ../astar_gpu --version sliding --input-data ${INPUT_DATA_PATH} --output-data ${OUTPUT_DATA_PATH}
     ./sliding_test ${INPUT_DATA_PATH} ${OUTPUT_DATA_TEST_PATH}
     origin_time=$(head -n 1 ${OUTPUT_DATA_PATH})

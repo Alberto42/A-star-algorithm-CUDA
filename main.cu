@@ -175,7 +175,7 @@ __device__ __host__ void swap(int &a, int &b) {
     b = tmp;
 }
 struct PriorityQueue {
-    State A[PRIORITY_QUEUE_SIZE];
+    State A[PRIORITY_QUEUE_SIZE+1];
     int lock;
 
     __device__ __host__ PriorityQueue():lock(1) {}
@@ -287,6 +287,7 @@ void read_slides(ifstream &in, int *slides, int &len) {
         }
         s = m.suffix().str();
     }
+    assert (len <= MAX_SLIDES_COUNT);
 }
 
 __device__ __host__ int f(const Vertex &a, const Vertex &b, int slidesCount, int slidesCountSqrt) {
@@ -487,10 +488,10 @@ void printPath(HashMap &h, State &m,Vertex& start, int slidesCount, ostream& out
 
 void main2(int argc, const char *argv[]) {
     Program_spec result;
-//    parse_args(argc, argv, result);
-    result.in.open("dupa");
-    result.out.open("output_data");
-    result.version = sliding;
+    parse_args(argc, argv, result);
+//    result.in.open("dupa");
+//    result.out.open("output_data");
+//    result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
 
     read_slides(result.in, slides, slidesCount);
