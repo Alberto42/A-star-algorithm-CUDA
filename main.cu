@@ -14,11 +14,11 @@ const int BLOCKS_COUNT = 1000;
 const int THREADS_PER_BLOCK_COUNT = 32;
 const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
 const int MAX_SLIDES_COUNT = 25;
-const int PRIORITY_QUEUE_SIZE = 10;
+const int PRIORITY_QUEUE_SIZE = 100;
 const int MAX_S_SIZE = 6;
 const int INF = 1000000000;
-const int H_SIZE = 16384; // It must be the power of 2
-const int H_SIZE_DEDUPLICATE = 1024; // change to long ints
+const int H_SIZE = 1048576; // It must be the power of 2
+const int H_SIZE_DEDUPLICATE = 1048576; // change to long ints
 const int Q_CANDIDATES_COUNT = 100;
 const int HASH_FUNCTIONS_COUNT = 10; // must be smaller or equal to H_SIZE_DEDUPLICATE
 int slidesCount, slidesCountSqrt;
@@ -500,10 +500,10 @@ __global__ void getPathKernel(HashMap *h, State *m,Vertex *start, int slidesCoun
 
 void main2(int argc, const char *argv[]) {
     Program_spec result;
-//    parse_args(argc, argv, result);
-    result.in.open("slides/1.in");
-    result.out.open("output_data");
-    result.version = sliding;
+    parse_args(argc, argv, result);
+//    result.in.open("slides/1.in");
+//    result.out.open("output_data");
+//    result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
 
     read_slides(result.in, slides, slidesCount);
@@ -551,12 +551,12 @@ void main2(int argc, const char *argv[]) {
     cudaMemcpy(devSSize, sSize, sizeof(int) * THREADS_COUNT, cudaMemcpyHostToDevice);
     cudaMemcpy(devQiCandidatesCount, &qiCandidatesCount, sizeof(int), cudaMemcpyHostToDevice);
 
+    createHashmapKernel <<< 1, 1 >>> (devH, devStart, devTarget, slidesCount, slidesCountSqrt);
+
     cudaEvent_t start_t, stop_t;
     cudaEventCreate(&start_t);
     cudaEventCreate(&stop_t);
     cudaEventRecord(start_t, 0);
-
-    createHashmapKernel <<< 1, 1 >>> (devH, devStart, devTarget, slidesCount, slidesCountSqrt);
 
     while(true) {
         int isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
