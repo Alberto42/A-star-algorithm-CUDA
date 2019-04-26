@@ -112,7 +112,7 @@ struct State {
 
 struct HashMap  {
     State hashmap[H_SIZE];
-    HashMap() {
+    __device__ __host__ HashMap() {
         for(int i=0;i<H_SIZE;i++)
             hashmap[i].f = -1;
     }
@@ -478,6 +478,10 @@ __global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue 
 }
 __global__ void createHashmapKernel(HashMap *h, Vertex *start, Vertex *target, int slidesCount, int slidesCountSqrt) {
     State startState = State(0, f(*start, *target, slidesCount, slidesCountSqrt), *start);
+    for(int i=0;i<H_SIZE;i++) {
+        h->hashmap[i].f = -1;
+        h->hashmap[i].lock = 1;
+    }
     h->insert(startState, slidesCount);
 }
 __global__ void getPathKernel(HashMap *h, State *m,Vertex *start, int slidesCount, Vertex* result, int *sizeResult) {
