@@ -9,15 +9,15 @@
 namespace po = boost::program_options;
 using namespace std;
 
-const int BLOCKS_COUNT = 1;
-const int THREADS_PER_BLOCK_COUNT = 1;
+const int BLOCKS_COUNT = 1000;
+const int THREADS_PER_BLOCK_COUNT = 32;
 const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
 const int MAX_SLIDES_COUNT = 25;
-const int PRIORITY_QUEUE_SIZE = 500;
+const int PRIORITY_QUEUE_SIZE = 10;
 const int MAX_S_SIZE = 6;
 const int INF = 1000000000;
-const int H_SIZE = 2048; // It must be the power of 2
-const int H_SIZE_DEDUPLICATE = 1024;
+const int H_SIZE = 16384*8; // It must be the power of 2
+const int H_SIZE_DEDUPLICATE = 1024; // change to long ints
 const int Q_CANDIDATES_COUNT = 100;
 const int HASH_FUNCTIONS_COUNT = 10; // must be smaller or equal to H_SIZE_DEDUPLICATE
 int slidesCount, slidesCountSqrt;
@@ -32,8 +32,8 @@ struct Vertex {
 
     __device__ Vertex() {}
     __device__ __host__ int hashBase(int slidesCount, int base) {
-        int result = 0;
-        for(int i=0,p=1;i<slidesCount;i++,p=( p * base ) % H_SIZE) {
+        long int result = 0;
+        for(long int i=0,p=1;i<slidesCount;i++,p=( p * base ) % H_SIZE) {
             result = (result + slides[i]*p) % H_SIZE;
         }
         return result;
@@ -46,7 +46,7 @@ struct Vertex {
         hash = hash % 2 ? hash : (hash + 1) % H_SIZE;
         return hash;
     }
-    __device__ __host__ int hash(int i, int slidesCount) {
+    __device__ __host__ int hash(long int i, int slidesCount) {
         return (hash1(slidesCount) + i*hash2(slidesCount) ) % H_SIZE;
     }
     __host__ void print(int slidesCount, ostream& out) {
@@ -488,10 +488,10 @@ void printPath(HashMap &h, State &m,Vertex& start, int slidesCount, ostream& out
 
 void main2(int argc, const char *argv[]) {
     Program_spec result;
-    parse_args(argc, argv, result);
-//    result.in.open("dupa");
-//    result.out.open("output_data");
-//    result.version = sliding;
+//    parse_args(argc, argv, result);
+    result.in.open("dupa");
+    result.out.open("output_data");
+    result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
 
     read_slides(result.in, slides, slidesCount);

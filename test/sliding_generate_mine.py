@@ -21,7 +21,7 @@ slides = int(sys.argv[3])
 random.seed(seed)
 
 array = np.array(range(n*n))
-# random.shuffle(array)
+random.shuffle(array)
 array = np.reshape(array,(n,n))
 
 arrayStart = np.reshape(array,n*n).copy()
@@ -48,7 +48,7 @@ while((arrayStart == arrayTarget).all()):
         # print(array)
     arrayTarget = np.reshape(array, n*n).copy()
 
-printArray(arrayTarget)
 printArray(arrayStart)
+printArray(arrayTarget)
 
 
