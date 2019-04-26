@@ -9,7 +9,7 @@
 namespace po = boost::program_options;
 using namespace std;
 
-const int BLOCKS_COUNT = 3;
+const int BLOCKS_COUNT = 1;
 const int THREADS_PER_BLOCK_COUNT = 1;
 const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
 const int MAX_SLIDES_COUNT = 25;
@@ -487,10 +487,10 @@ void printPath(HashMap &h, State &m,Vertex& start, int slidesCount, ostream& out
 
 void main2(int argc, const char *argv[]) {
     Program_spec result;
-    parse_args(argc, argv, result);
-//    result.in.open("slides/3_1.in");
-//    result.out.open("output_data");
-//    result.version = sliding;
+//    parse_args(argc, argv, result);
+    result.in.open("slides/3_5.in");
+    result.out.open("output_data");
+    result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
 
     read_slides(result.in, slides, slidesCount);
