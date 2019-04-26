@@ -31,7 +31,7 @@ struct Vertex {
         memcpy(this->slides, slides, MAX_SLIDES_COUNT * sizeof(int));
     }
 
-    __device__ Vertex() {}
+    __device__ __host__ Vertex() {}
     __device__ __host__ int hashBase(int slidesCount, int base) {
         long int result = 0;
         for(long int i=0,p=1;i<slidesCount;i++,p=( p * base ) % H_SIZE) {
@@ -476,23 +476,30 @@ __global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue 
         }
     }
 }
-void printPath(HashMap &h, State &m,Vertex& start, int slidesCount, ostream& out) {
-    if (vertexEqual(m.node, start, slidesCount)) {
-        m.node.print(slidesCount, out);
-        return;
+__global__ void createHashmapKernel(HashMap *h, Vertex *start, Vertex *target, int slidesCount, int slidesCountSqrt) {
+    State startState = State(0, f(*start, *target, slidesCount, slidesCountSqrt), *start);
+    h->insert(startState, slidesCount);
+}
+__global__ void getPathKernel(HashMap *h, State *m,Vertex *start, int slidesCount, Vertex* result, int *sizeResult) {
+    State *currentState = m;
+    while(true) {
+        result[(*sizeResult)++] = currentState->node;
+        if (vertexEqual(currentState->node, *start, slidesCount)) {
+            break;
+        }
+        State* tmp = h->find(currentState->prev,slidesCount);
+        assert(tmp->f != -1);
+        currentState = tmp;
     }
-    State* tmp = h.find(m.prev,slidesCount);
-    assert(tmp->f != -1);
-    printPath(h,*tmp,start, slidesCount, out);
-    m.node.print(slidesCount, out);
+
 }
 
 void main2(int argc, const char *argv[]) {
     Program_spec result;
-    parse_args(argc, argv, result);
-//    result.in.open("dupa");
-//    result.out.open("output_data");
-//    result.version = sliding;
+//    parse_args(argc, argv, result);
+    result.in.open("slides/1.in");
+    result.out.open("output_data");
+    result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
 
     read_slides(result.in, slides, slidesCount);
@@ -504,21 +511,19 @@ void main2(int argc, const char *argv[]) {
 
     State m(INF), qiCandidates[Q_CANDIDATES_COUNT];
     PriorityQueue q;
-    HashMap h;
     int sSize[THREADS_COUNT], qiCandidatesCount=0;
     State startState = State(0, f(start, target, slidesCount, slidesCountSqrt), start);
     q.insert(startState);
     for(int i=0;i<THREADS_COUNT;i++) {
         sSize[i] = 0;
     }
-    h.insert(startState, slidesCount);
 
-    Vertex *devStart, *devTarget;
+    Vertex *devStart, *devTarget, *devPath;
     State *devM, *devS, *devT, *devQiCandidates;
     PriorityQueue *devQ;
     HashMap *devH;
     HashMapDeduplicate *devHD;
-    int *devSSize, *devIsTheEnd, *devIsNotEmptyQueue, *devQiCandidatesCount;
+    int *devSSize, *devIsTheEnd, *devIsNotEmptyQueue, *devQiCandidatesCount, *devPathSize;
 
     cudaMalloc(&devStart, sizeof(Vertex));
     cudaMalloc(&devTarget, sizeof(Vertex));
@@ -533,19 +538,21 @@ void main2(int argc, const char *argv[]) {
     cudaMalloc(&devQiCandidates, sizeof(State) * Q_CANDIDATES_COUNT);
     cudaMalloc(&devH, sizeof(HashMap));
     cudaMalloc(&devHD, sizeof(HashMapDeduplicate));
+    cudaMalloc(&devPathSize, sizeof(int));
 
     cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice);
     cudaMemcpy(devTarget, &target, sizeof(Vertex), cudaMemcpyHostToDevice);
     cudaMemcpy(devM, &m, sizeof(State), cudaMemcpyHostToDevice);
     cudaMemcpy(devQ, &q, sizeof(PriorityQueue), cudaMemcpyHostToDevice);
     cudaMemcpy(devSSize, sSize, sizeof(int) * THREADS_COUNT, cudaMemcpyHostToDevice);
-    cudaMemcpy(devH, &h, sizeof(HashMap), cudaMemcpyHostToDevice);
     cudaMemcpy(devQiCandidatesCount, &qiCandidatesCount, sizeof(int), cudaMemcpyHostToDevice);
 
     cudaEvent_t start_t, stop_t;
     cudaEventCreate(&start_t);
     cudaEventCreate(&stop_t);
     cudaEventRecord(start_t, 0);
+
+    createHashmapKernel <<< 1, 1 >>> (devH, devStart, devTarget, slidesCount, slidesCountSqrt);
 
     while(true) {
         int isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
@@ -572,16 +579,27 @@ void main2(int argc, const char *argv[]) {
     cudaEventRecord(stop_t, 0);
 
     cudaMemcpy(&m, devM, sizeof(State), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&h, devH, sizeof(HashMap), cudaMemcpyDeviceToHost);
 
     float elapsedTime;
     cudaEventElapsedTime(&elapsedTime, start_t, stop_t);
 
+
     result.out << elapsedTime << endl;
-    if (m.f == INF) {
-    } else {
-        printPath(h, m, start, slidesCount, result.out);
+    if (m.f != INF) {
+        cudaMalloc(&devPath, sizeof(Vertex) * (m.g+10));
+        getPathKernel <<< 1, 1 >>> (devH, devM, devStart,slidesCount, devPath, devPathSize);
+        int pathSize;
+        cudaMemcpy(&pathSize, devPathSize, sizeof(int), cudaMemcpyDeviceToHost);
+        Vertex* path = new Vertex[pathSize];
+        cudaMemcpy(path, devPath, sizeof(Vertex) * pathSize, cudaMemcpyDeviceToHost);
+
+        for(int i=pathSize-1;i>=0;i--)
+            path[i].print(slidesCount,result.out);
+
+        delete [] path;
+        cudaFree(devPath);
     }
+
 
     cudaEventDestroy(start_t);
     cudaEventDestroy(stop_t);
@@ -596,6 +614,7 @@ void main2(int argc, const char *argv[]) {
     cudaFree(devHD);
     cudaFree(devQiCandidates);
     cudaFree(devQiCandidatesCount);
+    cudaFree(devPathSize);
 }
 
 int main(int argc, const char *argv[]) {
