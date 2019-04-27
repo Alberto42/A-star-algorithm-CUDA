@@ -72,6 +72,7 @@ struct Program_spec {
     Version version;
     ifstream in;
     ofstream out;
+    int device;
 //    Program_spec(Version version, ifstream in, ofstream out):version(version),in(in),out(out){};
 };
 
