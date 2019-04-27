@@ -1,8 +1,8 @@
 all: astar_gpu
-
-NVCC_FLAGS_R = -std=c++14 -g -G
+NVCC_FLAGS_2 = -std=c++14 -g -G
+NVCC_FLAGS_R = -std=c++14 -g -G -x cu -dc
 astar_gpu: main expandKernel structures
-	nvcc -o astar_gpu $(NVCC_FLAGS_R) -lboost_program_options main.o structures.o kernels/expandKernel.o
+	nvcc -o astar_gpu $(NVCC_FLAGS_2) -lboost_program_options main.o structures.o kernels/expandKernel.o
 
 main: main.cu
 	nvcc -c -o main.o $(NVCC_FLAGS_R) -Xptxas -c main.cu

@@ -224,10 +224,10 @@ __global__ void getPathKernel(HashMap *h, State *m,Vertex *start, int slidesCoun
 
 void main2(int argc, const char *argv[]) {
     Program_spec result;
-//    parse_args(argc, argv, result);
-    result.in.open("slides/1.in");
-    result.out.open("output_data");
-    result.version = sliding;
+    parse_args(argc, argv, result);
+//    result.in.open("slides/1.in");
+//    result.out.open("output_data");
+//    result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
 
     read_slides(result.in, slides, slidesCount);
@@ -283,7 +283,6 @@ void main2(int argc, const char *argv[]) {
     cudaEventCreate(&stop_t);
     cudaEventRecord(start_t, 0);
 
-    cout<<"here1" << endl;
     while(true) {
         int isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
         if (!isNotEmptyQueue)
