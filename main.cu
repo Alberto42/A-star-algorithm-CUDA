@@ -534,7 +534,7 @@ void main2(int argc, const char *argv[]) {
     HashMapDeduplicate *devHD;
     int *devSSize, *devIsTheEnd, *devIsNotEmptyQueue, *devQiCandidatesCount, *devPathSize;
 
-    cudaSetDevice(1);
+    cudaSetDevice(2);
     cudaMalloc(&devStart, sizeof(Vertex));
     cudaMalloc(&devTarget, sizeof(Vertex));
     cudaMalloc(&devM,sizeof(State));
