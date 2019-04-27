@@ -331,10 +331,12 @@ slidesCountSqrt) {
             continue;
         if (i < 2 && empty / slidesCountSqrt != move / slidesCountSqrt)
             continue;
-        State sTmp = qi; // I hope slides is copied
+        State sTmp;
         sTmp.g = qi.g + 1;
 
+        sTmp.node = qi.node;
         swap(sTmp.node.slides[empty], sTmp.node.slides[move]);
+
         sTmp.f = -2;
         sTmp.prev = qi.node;
         sTmp.lock = 1;
@@ -532,7 +534,7 @@ void main2(int argc, const char *argv[]) {
     HashMapDeduplicate *devHD;
     int *devSSize, *devIsTheEnd, *devIsNotEmptyQueue, *devQiCandidatesCount, *devPathSize;
 
-    cudaSetDevice(3);
+    cudaSetDevice(1);
     cudaMalloc(&devStart, sizeof(Vertex));
     cudaMalloc(&devTarget, sizeof(Vertex));
     cudaMalloc(&devM,sizeof(State));
