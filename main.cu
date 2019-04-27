@@ -6,244 +6,15 @@
 #include <regex>
 #include <cmath>
 #include <time.h>
+#include "kernels/expandKernel.h"
+#include "structures.h"
 
 namespace po = boost::program_options;
 using namespace std;
 
-const int BLOCKS_COUNT = 41;
-const int THREADS_PER_BLOCK_COUNT = 128;
-const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
-const int MAX_SLIDES_COUNT = 25;
-const int PRIORITY_QUEUE_SIZE = 10000;
-const int MAX_S_SIZE = 4;
-const int INF = 1000000000;
-const int H_SIZE = 1048576*4; // It must be the power of 2
-const int H_SIZE_DEDUPLICATE = 32768; // change to long ints
-const int Q_CANDIDATES_COUNT = 100;
-const int HASH_FUNCTIONS_COUNT = 32768; // must be smaller or equal to H_SIZE_DEDUPLICATE
 int slidesCount, slidesCountSqrt;
 
-struct Vertex {
-    int slides[MAX_SLIDES_COUNT];
-    __host__ __device__
 
-    Vertex(int slides[]) {
-        memcpy(this->slides, slides, MAX_SLIDES_COUNT * sizeof(int));
-    }
-
-    __device__ __host__ Vertex() {}
-    __device__ __host__ int hashBase(int slidesCount, int base) {
-        long int result = 0;
-        for(long int i=0,p=1;i<slidesCount;i++,p=( p * base ) % H_SIZE) {
-            result = (result + slides[i]*p) % H_SIZE;
-        }
-        return result;
-    }
-    __device__ __host__ int hash1(int slidesCount) {
-        return this->hashBase(slidesCount, 30);
-    }
-    __device__ __host__ int hash2(int slidesCount) {
-        int hash = this->hashBase(slidesCount, 29);
-        hash = hash % 2 ? hash : (hash + 1) % H_SIZE;
-        return hash;
-    }
-    __device__ __host__ int hash(long int i, int slidesCount) {
-        return (hash1(slidesCount) + i*hash2(slidesCount) ) % H_SIZE;
-    }
-    __host__ void print(int slidesCount, ostream& out) {
-        for(int i=0;i<slidesCount;i++){
-            if (slides[i] == 0)
-                out<<"_";
-            else out<<slides[i];
-            if (i != slidesCount-1)
-                out<<",";
-        }
-        out << endl;
-    }
-};
-
-__device__ __host__ bool vertexEqual(const Vertex &a, const Vertex &b,const int &slidesCount) {
-    for (int i = 0; i < slidesCount; i++) {
-        if (a.slides[i] != b.slides[i])
-            return false;
-    }
-    return true;
-}
-
-struct State {
-    Vertex node;
-    int g, f, lock;
-    Vertex prev;
-
-    __device__ __host__ State():lock(1) {}
-
-    __device__ __host__ State(int f):f(f), lock(1) {}
-
-    __device__ __host__ State(int g, int f, Vertex node):g(g), f(f), node(node), lock(1) {}
-    __device__ __host__ State& operator=(const State& that) {
-        this->node = that.node;
-        this->g = that.g;
-        this->f = that.f;
-        this->prev = that.prev;
-        return *this;
-    }
-
-    __device__ __host__ int hashBase(int slidesCount, int base) {
-        int result = 0;
-        int p=1;
-        for(int i=0;i<slidesCount;i++,p=( p * base ) % H_SIZE_DEDUPLICATE) {
-            result = (result + node.slides[i]*p) % H_SIZE_DEDUPLICATE;
-        }
-        result = (result + this->g*p) % H_SIZE_DEDUPLICATE;
-        return result;
-    }
-    __device__ __host__ int hash1(int slidesCount) {
-        return this->hashBase(slidesCount, 30);
-    }
-    __device__ __host__ int hash2(int slidesCount) {
-        int hash = this->hashBase(slidesCount, 29);
-        hash = hash % 2 ? hash : (hash + 1) % H_SIZE_DEDUPLICATE;
-        return hash;
-    }
-    __device__ __host__ int hash(int i, int slidesCount) {
-        return (hash1(slidesCount) + i*hash2(slidesCount) ) % H_SIZE_DEDUPLICATE;
-    }
-};
-
-struct HashMap  {
-    State hashmap[H_SIZE];
-    __device__ __host__ HashMap() {
-        for(int i=0;i<H_SIZE;i++)
-            hashmap[i].f = -1;
-    }
-
-    __device__ __host__ State* find(Vertex& v, int slidesCount) {
-        for(int i=0;i<H_SIZE;i++) {
-            int hash = v.hash(i,slidesCount);
-            assert(0 <= hash && hash < H_SIZE);
-            if (hashmap[hash].f == -1 || vertexEqual(hashmap[hash].node,v, slidesCount))
-                return &hashmap[hash];
-        }
-        assert(false);
-        return nullptr;
-    }
-    __device__ __host__ void insert(State& s, int slidesCount) {
-        State* tmp = this->find(s.node, slidesCount);
-        *tmp = s;
-    }
-};
-struct HashMapDeduplicate {
-    int hashmap[H_SIZE_DEDUPLICATE];
-    HashMapDeduplicate() {
-        for(int i=0;i<H_SIZE_DEDUPLICATE;i++)
-            hashmap[i] = -1;
-    }
-    __device__ int find(State& item, int slidesCount, State* s) {
-        for(int i=0;i<HASH_FUNCTIONS_COUNT;i++) {
-            int hash = item.hash(i, slidesCount);
-            assert(0 <= hash && hash < H_SIZE_DEDUPLICATE);
-            if (hashmap[hash] == -1 || (vertexEqual(s[hashmap[hash]].node,item.node, slidesCount) && s[hashmap[hash]].g
-            ==item.g) );
-                return i;
-        }
-        return 0;
-    }
-};
-enum Version {
-    sliding, pathfinding
-};
-
-struct Program_spec {
-    Version version;
-    ifstream in;
-    ofstream out;
-//    Program_spec(Version version, ifstream in, ofstream out):version(version),in(in),out(out){};
-};
-
-__device__ __host__ bool operator<(const State &a, const State &b) { return a.f < b.f; }
-
-__device__ __host__ bool operator>(const State &a, const State &b) { return a.f > b.f; }
-
-__device__ __host__ void swap(State &a, State &b) {
-    State tmp = a;
-    a = b;
-    b = tmp;
-}
-
-__device__ __host__ void swap(int &a, int &b) {
-    int tmp = a;
-    a = b;
-    b = tmp;
-}
-struct PriorityQueue {
-    State A[PRIORITY_QUEUE_SIZE+1];
-    int lock;
-
-    __device__ __host__ PriorityQueue():lock(1) {}
-
-    int heapSize = 0;
-
-    __device__ __host__ int parent(int i) {
-        return i / 2;
-    }
-
-    __device__ __host__ int left(int i) {
-        return i * 2;
-    }
-
-    __device__ __host__ int right(int i) {
-        return i * 2 + 1;
-    }
-
-    __device__ __host__ void maxHeapify(int i) {
-        while(true) {
-            int l = left(i);
-            int r = right(i);
-            int smallest;
-            if (l <= heapSize && A[l] < A[i]) {
-                smallest = l;
-            } else {
-                smallest = i;
-            }
-            if (r <= heapSize && A[r] < A[smallest])
-                smallest = r;
-            if (smallest != i) {
-                swap(A[i], A[smallest]);
-                i = smallest;
-            } else {
-                break;
-            }
-        }
-    }
-
-    __device__ __host__ void insert(State s) {
-        assert(heapSize < PRIORITY_QUEUE_SIZE);
-        heapSize++;
-        A[heapSize] = s;
-        int i = heapSize;
-        while (i > 1 && A[parent(i)] > A[i]) {
-            swap(A[i], A[parent(i)]);
-            i = parent(i);
-        }
-    }
-
-    __device__ State pop() {
-        assert(heapSize > 0);
-        State max = A[1];
-        A[1] = A[heapSize];
-        heapSize--;
-        maxHeapify(1);
-        return max;
-    }
-
-    __device__ bool empty() {
-        return heapSize == 0;
-    }
-
-    __device__ State* top() {
-        return (!this->empty()) ? A+1 : nullptr;
-    }
-};
 
 void parse_args(int argc, const char *argv[], Program_spec &program_spec) {
     po::options_description desc{"Options"};
@@ -312,39 +83,6 @@ __device__ __host__ int f(const Vertex &a, const Vertex &b, int slidesCount, int
     return sum;
 }
 
-__device__ void expand(const State qi, State s[], int &sSize, const Vertex &target,int slidesCount, int
-slidesCountSqrt) {
-    int moves[] = {-1, 1, -slidesCountSqrt, slidesCountSqrt};
-    const int movesCount = 4;
-    int empty = -1;
-    const int *slides = qi.node.slides;
-    for (int i = 0; i < slidesCount; i++)
-        if (slides[i] == 0) {
-            empty = i;
-            break;
-        }
-    if (empty == -1)
-        assert(false);
-    for (int i = 0; i < movesCount; i++) {
-        int move = empty + moves[i];
-        if (move < 0 || move >= slidesCount)
-            continue;
-        if (i < 2 && empty / slidesCountSqrt != move / slidesCountSqrt)
-            continue;
-        State sTmp;
-        sTmp.g = qi.g + 1;
-
-        sTmp.node = qi.node;
-        swap(sTmp.node.slides[empty], sTmp.node.slides[move]);
-
-        sTmp.f = -2;
-        sTmp.prev = qi.node;
-        sTmp.lock = 1;
-        assert(sSize < MAX_S_SIZE);
-        s[sSize++] = sTmp;
-    }
-}
-
 __host__ int calcSlidesCountSqrt(int slidesCount) {
     int slidesCountSqrt;
     for (int i = 1; i < slidesCount; i++) {
@@ -359,26 +97,7 @@ __host__ int calcSlidesCountSqrt(int slidesCount) {
     return slidesCountSqrt;
 }
 
-__global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQueue *q, State *s, int *sSize,State
-*qiCandidates, int *qiCandidatesCount, int slidesCount, int slidesCountSqrt) {
 
-    int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
-    sSize[id] = 0;
-    for(int i=id*MAX_S_SIZE;i<(id+1)*MAX_S_SIZE;i++)
-        s[i].f = -1;
-    if (q[id].empty()) {
-        return;
-    }
-    State qi = q[id].pop();
-
-    if (vertexEqual(qi.node,*target,slidesCount) ) {
-        if (qi.f < m->f) {
-            int tmp = atomicAdd(qiCandidatesCount, 1);
-            qiCandidates[tmp] = qi;
-        }
-    } else
-        expand(qi, s + (id*MAX_S_SIZE), sSize[id], *target, slidesCount, slidesCountSqrt);
-}
 __global__ void improveMKernel(State *m, State *qiCandidates, int *qiCandidatesCount) {
     for(int i=0;i<*qiCandidatesCount;i++) {
         if (qiCandidates[i].f < m->f) {
@@ -505,10 +224,10 @@ __global__ void getPathKernel(HashMap *h, State *m,Vertex *start, int slidesCoun
 
 void main2(int argc, const char *argv[]) {
     Program_spec result;
-    parse_args(argc, argv, result);
-//    result.in.open("slides/1.in");
-//    result.out.open("output_data");
-//    result.version = sliding;
+//    parse_args(argc, argv, result);
+    result.in.open("slides/1.in");
+    result.out.open("output_data");
+    result.version = sliding;
     int slides[MAX_SLIDES_COUNT], slidesCount;
 
     read_slides(result.in, slides, slidesCount);
@@ -534,7 +253,7 @@ void main2(int argc, const char *argv[]) {
     HashMapDeduplicate *devHD;
     int *devSSize, *devIsTheEnd, *devIsNotEmptyQueue, *devQiCandidatesCount, *devPathSize;
 
-    cudaSetDevice(2);
+    cudaSetDevice(1);
     cudaMalloc(&devStart, sizeof(Vertex));
     cudaMalloc(&devTarget, sizeof(Vertex));
     cudaMalloc(&devM,sizeof(State));
@@ -564,6 +283,7 @@ void main2(int argc, const char *argv[]) {
     cudaEventCreate(&stop_t);
     cudaEventRecord(start_t, 0);
 
+    cout<<"here1" << endl;
     while(true) {
         int isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
         if (!isNotEmptyQueue)
