@@ -10,8 +10,8 @@
 namespace po = boost::program_options;
 using namespace std;
 
-const int BLOCKS_COUNT = 10;
-const int THREADS_PER_BLOCK_COUNT = 512;
+const int BLOCKS_COUNT = 41;
+const int THREADS_PER_BLOCK_COUNT = 128;
 const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
 const int MAX_SLIDES_COUNT = 25;
 const int PRIORITY_QUEUE_SIZE = 10000;
