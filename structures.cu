@@ -206,3 +206,24 @@ __device__ bool PriorityQueue::empty() {
 __device__ State* PriorityQueue::top() {
     return (!this->empty()) ? A+1 : nullptr;
 }
+
+__device__ __host__ int f(const Vertex &a, const Vertex &b, int slidesCount, int slidesCountSqrt) {
+    int pos[MAX_SLIDES_COUNT + 1];
+    int sum = 0;
+    for (int i = 0; i < slidesCount; i++) {
+        int value = b.slides[i];
+        if (value != 0) {
+            assert(1 <= value && value <= slidesCount);
+            pos[value] = i;
+        }
+    }
+    for (int posA = 0; posA < slidesCount; posA++) {
+        if (a.slides[posA] != 0) {
+            int posB = pos[a.slides[posA]];
+            int tmp1 = abs(posA % slidesCountSqrt - posB % slidesCountSqrt);
+            int tmp2 = abs(posA / slidesCountSqrt - posB / slidesCountSqrt);
+            sum += tmp1 + tmp2;
+        }
+    }
+    return sum;
+}

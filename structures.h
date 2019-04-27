@@ -107,4 +107,6 @@ struct PriorityQueue {
     __device__ State* top();
 };
 
+__device__ __host__ int f(const Vertex &a, const Vertex &b, int slidesCount, int slidesCountSqrt);
+
 #endif //PROJECT1B_STRUCTURES_H

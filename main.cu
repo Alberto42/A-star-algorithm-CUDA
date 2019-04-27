@@ -7,14 +7,16 @@
 #include <cmath>
 #include <time.h>
 #include "kernels/expandKernel.h"
+#include "kernels/deduplicateKernel.h"
+#include "kernels/insertNewStatesKernel.h"
+#include "kernels/kernels.h"
+#include "kernels/removeUselessStatesKernel.h"
 #include "structures.h"
 
 namespace po = boost::program_options;
 using namespace std;
 
 int slidesCount, slidesCountSqrt;
-
-
 
 void parse_args(int argc, const char *argv[], Program_spec &program_spec) {
     po::options_description desc{"Options"};
@@ -62,27 +64,6 @@ void read_slides(ifstream &in, int *slides, int &len) {
     assert (len <= MAX_SLIDES_COUNT);
 }
 
-__device__ __host__ int f(const Vertex &a, const Vertex &b, int slidesCount, int slidesCountSqrt) {
-    int pos[MAX_SLIDES_COUNT + 1];
-    int sum = 0;
-    for (int i = 0; i < slidesCount; i++) {
-        int value = b.slides[i];
-        if (value != 0) {
-            assert(1 <= value && value <= slidesCount);
-            pos[value] = i;
-        }
-    }
-    for (int posA = 0; posA < slidesCount; posA++) {
-        if (a.slides[posA] != 0) {
-            int posB = pos[a.slides[posA]];
-            int tmp1 = abs(posA % slidesCountSqrt - posB % slidesCountSqrt);
-            int tmp2 = abs(posA / slidesCountSqrt - posB / slidesCountSqrt);
-            sum += tmp1 + tmp2;
-        }
-    }
-    return sum;
-}
-
 __host__ int calcSlidesCountSqrt(int slidesCount) {
     int slidesCountSqrt;
     for (int i = 1; i < slidesCount; i++) {
@@ -95,131 +76,6 @@ __host__ int calcSlidesCountSqrt(int slidesCount) {
         }
     }
     return slidesCountSqrt;
-}
-
-
-__global__ void improveMKernel(State *m, State *qiCandidates, int *qiCandidatesCount) {
-    for(int i=0;i<*qiCandidatesCount;i++) {
-        if (qiCandidates[i].f < m->f) {
-            *m = qiCandidates[i];
-        }
-    }
-    *qiCandidatesCount = 0;
-}
-__global__ void deduplicateKernel(State *s, int *sSize, State *t, HashMapDeduplicate *h, int slidesCount) {
-    int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
-    for(int i=id*MAX_S_SIZE;i<(id+1)*MAX_S_SIZE;i++) {
-        t[i] = s[i];
-    }
-    for(int i=id*MAX_S_SIZE;i < id*MAX_S_SIZE + sSize[id];i++) {
-        int z = h->find(s[i],slidesCount, s);
-        int hash = s[i].hash(z, slidesCount);
-
-        int t_tmp = atomicExch(h->hashmap+hash, i);
-        if (t_tmp != -1 && vertexEqual(s[t_tmp].node, s[i].node, slidesCount) && s[t_tmp].g == s[i].g ) {
-            t[i].f = -1;
-        }
-    }
-
-}
-void deduplicateKernelHost(State *devS, int *devSSize, State *devT, HashMapDeduplicate *devHD, int slidesCount) {
-
-    HashMapDeduplicate hD;
-    cudaMemcpy(devHD, &hD, sizeof(HashMapDeduplicate), cudaMemcpyHostToDevice);
-    deduplicateKernel <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devS,devSSize, devT,devHD,slidesCount);
-    cudaMemcpy(&hD, devHD, sizeof(HashMapDeduplicate), cudaMemcpyDeviceToHost); //fixme: useless ?
-
-}
-__global__ void checkIfTheEndKernel(State *m, PriorityQueue *q, int* result) {
-    int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
-    State* t = q[id].top();
-    if (t != nullptr) {
-        if (m->f > t->f) {
-            atomicExch(result, 0); //fixme: Maybe atomic is not necessary
-        }
-    }
-}
-__global__ void checkExistanceOfNotEmptyQueue(PriorityQueue *q, int* isNotEmptyQueue) {
-    int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
-    if (!q[id].empty()) {
-        atomicExch(isNotEmptyQueue, 1);
-    }
-}
-bool checkExistanceOfNotEmptyQueueHost(PriorityQueue *devQ, int* devIsNotEmptyQueue) {
-    int isNotEmptyQueue = 0;
-    cudaMemcpy(devIsNotEmptyQueue, &isNotEmptyQueue, sizeof(int), cudaMemcpyHostToDevice);
-    checkExistanceOfNotEmptyQueue<< < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> >(devQ, devIsNotEmptyQueue);
-    cudaMemcpy(&isNotEmptyQueue, devIsNotEmptyQueue, sizeof(int), cudaMemcpyDeviceToHost);
-    return isNotEmptyQueue;
-}
-bool checkIfTheEndKernelHost(State *devM, PriorityQueue *devQ,int *devIsTheEnd) {
-    int isTheEnd = 1;
-
-    cudaMemcpy(devIsTheEnd, &isTheEnd, sizeof(int), cudaMemcpyHostToDevice);
-
-    checkIfTheEndKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devM, devQ, devIsTheEnd);
-    cudaMemcpy(&isTheEnd, devIsTheEnd, sizeof(int), cudaMemcpyDeviceToHost);
-
-    return isTheEnd;
-}
-__global__ void removeUselessStates(HashMap *h, State *t,int *sSize, int slidesCount) {
-    int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
-    for(int i=id*MAX_S_SIZE;i < id*MAX_S_SIZE + sSize[id];i++) {
-        if (t[i].f == -1)
-            continue;
-        State* tmp = h->find(t[i].node, slidesCount);
-        if (tmp->f != -1 && tmp->g < t[i].g)
-            t[i].f = -1;
-    }
-}
-__global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue *q,Vertex *target, int slidesCount,
-        int slidesCountSqrt) {
-    int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
-    for(int i=id;i < THREADS_COUNT * MAX_S_SIZE;i+=THREADS_COUNT) {
-        if (t[i].f != -1) {
-            t[i].f = t[i].g + f(t[i].node, *target, slidesCount,slidesCountSqrt);
-            q[id].insert(t[i]);
-            for(int j=0;j<H_SIZE;j++) {
-                int hash = t[i].node.hash(j,slidesCount);
-                assert(0 <= hash && hash < H_SIZE);
-                if (h->hashmap[hash].f == -1 || vertexEqual(h->hashmap[hash].node,t[i].node, slidesCount)) {
-                    int lock = atomicExch(&h->hashmap[hash].lock, 0);
-                    if (lock) {
-                        h->hashmap[hash] = t[i];
-                        int lock = atomicExch(&h->hashmap[hash].lock, 1);
-                        assert(lock == 0);
-                        break;
-                    }
-                }
-                assert(j != H_SIZE -1);
-            }
-        }
-    }
-}
-__global__ void createHashmapKernel(HashMap *h, Vertex *start, Vertex *target, int slidesCount, int slidesCountSqrt) {
-
-    int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
-    for(int i=id;i<H_SIZE;i+=THREADS_COUNT) {
-        h->hashmap[i].f = -1;
-        h->hashmap[i].lock = 1;
-    }
-    if (id == 0) {
-        State startState = State(0, f(*start, *target, slidesCount, slidesCountSqrt), *start);
-        h->insert(startState, slidesCount);
-    }
-}
-__global__ void getPathKernel(HashMap *h, State *m,Vertex *start, int slidesCount, Vertex* result, int *sizeResult) {
-    State *currentState = m;
-    while(true) {
-        result[(*sizeResult)++] = currentState->node;
-        if (vertexEqual(currentState->node, *start, slidesCount)) {
-            break;
-        }
-        State* tmp = h->find(currentState->prev,slidesCount);
-        assert(tmp->f != -1);
-        currentState = tmp;
-    }
-
 }
 
 void main2(int argc, const char *argv[]) {
