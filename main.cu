@@ -18,9 +18,9 @@ const int PRIORITY_QUEUE_SIZE = 10000;
 const int MAX_S_SIZE = 4;
 const int INF = 1000000000;
 const int H_SIZE = 1048576*4; // It must be the power of 2
-const int H_SIZE_DEDUPLICATE = 4096; // change to long ints
+const int H_SIZE_DEDUPLICATE = 32768; // change to long ints
 const int Q_CANDIDATES_COUNT = 100;
-const int HASH_FUNCTIONS_COUNT = 10; // must be smaller or equal to H_SIZE_DEDUPLICATE
+const int HASH_FUNCTIONS_COUNT = 32768; // must be smaller or equal to H_SIZE_DEDUPLICATE
 int slidesCount, slidesCountSqrt;
 
 struct Vertex {
@@ -397,7 +397,6 @@ __global__ void deduplicateKernel(State *s, int *sSize, State *t, HashMapDedupli
         int t_tmp = atomicExch(h->hashmap+hash, i);
         if (t_tmp != -1 && vertexEqual(s[t_tmp].node, s[i].node, slidesCount) && s[t_tmp].g == s[i].g ) {
             t[i].f = -1;
-            continue;
         }
     }
 
@@ -533,6 +532,7 @@ void main2(int argc, const char *argv[]) {
     HashMapDeduplicate *devHD;
     int *devSSize, *devIsTheEnd, *devIsNotEmptyQueue, *devQiCandidatesCount, *devPathSize;
 
+    cudaSetDevice(3);
     cudaMalloc(&devStart, sizeof(Vertex));
     cudaMalloc(&devTarget, sizeof(Vertex));
     cudaMalloc(&devM,sizeof(State));
