@@ -10,11 +10,11 @@
 namespace po = boost::program_options;
 using namespace std;
 
-const int BLOCKS_COUNT = 1000;
-const int THREADS_PER_BLOCK_COUNT = 32;
+const int BLOCKS_COUNT = 10;
+const int THREADS_PER_BLOCK_COUNT = 512;
 const int THREADS_COUNT = BLOCKS_COUNT * THREADS_PER_BLOCK_COUNT;
 const int MAX_SLIDES_COUNT = 25;
-const int PRIORITY_QUEUE_SIZE = 1000;
+const int PRIORITY_QUEUE_SIZE = 10000;
 const int MAX_S_SIZE = 4;
 const int INF = 1000000000;
 const int H_SIZE = 1048576*4; // It must be the power of 2
@@ -477,12 +477,16 @@ __global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue 
     }
 }
 __global__ void createHashmapKernel(HashMap *h, Vertex *start, Vertex *target, int slidesCount, int slidesCountSqrt) {
-    State startState = State(0, f(*start, *target, slidesCount, slidesCountSqrt), *start);
-    for(int i=0;i<H_SIZE;i++) {
+
+    int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
+    for(int i=id;i<H_SIZE;i+=THREADS_COUNT) {
         h->hashmap[i].f = -1;
         h->hashmap[i].lock = 1;
     }
-    h->insert(startState, slidesCount);
+    if (id == 0) {
+        State startState = State(0, f(*start, *target, slidesCount, slidesCountSqrt), *start);
+        h->insert(startState, slidesCount);
+    }
 }
 __global__ void getPathKernel(HashMap *h, State *m,Vertex *start, int slidesCount, Vertex* result, int *sizeResult) {
     State *currentState = m;
@@ -551,7 +555,7 @@ void main2(int argc, const char *argv[]) {
     cudaMemcpy(devSSize, sSize, sizeof(int) * THREADS_COUNT, cudaMemcpyHostToDevice);
     cudaMemcpy(devQiCandidatesCount, &qiCandidatesCount, sizeof(int), cudaMemcpyHostToDevice);
 
-    createHashmapKernel <<< 1, 1 >>> (devH, devStart, devTarget, slidesCount, slidesCountSqrt);
+    createHashmapKernel <<< BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >>> (devH, devStart, devTarget, slidesCount, slidesCountSqrt);
 
     cudaEvent_t start_t, stop_t;
     cudaEventCreate(&start_t);
