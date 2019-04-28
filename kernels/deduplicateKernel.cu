@@ -1,7 +1,3 @@
-//
-// Created by albert on 27.04.19.
-//
-
 #include "deduplicateKernel.h"
 __global__ void deduplicateKernel(State *s, int *sSize, State *t, HashMapDeduplicate *h, int slidesCount) {
     int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
@@ -25,6 +21,4 @@ void deduplicateKernelHost(State *devS, int *devSSize, State *devT, HashMapDedup
     HashMapDeduplicate hD;
     cudaMemcpy(devHD, &hD, sizeof(HashMapDeduplicate), cudaMemcpyHostToDevice);
     deduplicateKernel <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devS,devSSize, devT,devHD,slidesCount);
-    cudaMemcpy(&hD, devHD, sizeof(HashMapDeduplicate), cudaMemcpyDeviceToHost); //fixme: useless ?
-
 }

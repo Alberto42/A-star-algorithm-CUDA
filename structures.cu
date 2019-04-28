@@ -51,7 +51,6 @@ __device__ __host__ bool vertexEqual(const Vertex &a, const Vertex &b,const int 
 }
 
 
-
 __device__ __host__ State::State():lock(1) {}
 
 __device__ __host__ State::State(int f):f(f), lock(1) {}
@@ -139,12 +138,7 @@ __device__ __host__ void swap(int &a, int &b) {
     b = tmp;
 }
 
-State A[PRIORITY_QUEUE_SIZE+1];
-int lock;
-
 __device__ __host__ PriorityQueue::PriorityQueue():lock(1) {}
-
-int heapSize = 0;
 
 __device__ __host__ int PriorityQueue::parent(int i) {
     return i / 2;

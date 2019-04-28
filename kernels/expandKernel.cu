@@ -1,6 +1,3 @@
-//
-// Created by albert on 27.04.19.
-//
 
 #include "expandKernel.h"
 #include "../structures.h"

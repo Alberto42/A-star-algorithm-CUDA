@@ -94,10 +94,6 @@ __host__ int calcSlidesCountSqrt(int slidesCount) {
 void main2(int argc, const char *argv[]) {
     Program_spec result;
     parse_args(argc, argv, result);
-//    result.in.open("slides/1.in");
-//    result.out.open("output_data");
-//    result.version = sliding;
-//    result.device = 1;
     int slides[MAX_SLIDES_COUNT], slidesCount;
 
     read_slides(result.in, slides, slidesCount);

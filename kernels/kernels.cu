@@ -1,7 +1,3 @@
-//
-// Created by albert on 27.04.19.
-//
-
 #include "kernels.h"
 __global__ void improveMKernel(State *m, State *qiCandidates, int *qiCandidatesCount) {
     for(int i=0;i<*qiCandidatesCount;i++) {
@@ -18,7 +14,7 @@ __global__ void checkIfTheEndKernel(State *m, PriorityQueue *q, int* result) {
     State* t = q[id].top();
     if (t != nullptr) {
         if (m->f > t->f) {
-            atomicExch(result, 0); //fixme: Maybe atomic is not necessary
+            atomicExch(result, 0);
         }
     }
 }
