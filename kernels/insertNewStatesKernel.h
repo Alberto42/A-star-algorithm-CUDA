@@ -8,5 +8,5 @@
 #include "../structures.h"
 
 __global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue *q,Vertex *target, int slidesCount,
-                                int slidesCountSqrt);
+                                int slidesCountSqrt, int* end);
 #endif //PROJECT1B_INSERTNEWSTATESKERNEL_H

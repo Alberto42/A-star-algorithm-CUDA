@@ -1,7 +1,7 @@
 NVCC_FLAGS_2 = -std=c++14 -O3
 NVCC_FLAGS_R = -std=c++14  -O3 -x cu -dc
 
-astar_gpu: main.o kernels/expandKernel.o structures.o kernels/deduplicateKernel.o kernels/insertNewStatesKernel.o kernels/kernels.o kernels/removeUselessStatesKernel.o
+astar_gpu: structures.o kernels/expandKernel.o kernels/deduplicateKernel.o kernels/insertNewStatesKernel.o kernels/kernels.o kernels/removeUselessStatesKernel.o main.o
 	nvcc -o astar_gpu $(NVCC_FLAGS_2) -lboost_program_options main.o structures.o kernels/*.o
 
 main.o: main.cu

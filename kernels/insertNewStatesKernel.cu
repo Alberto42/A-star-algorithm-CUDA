@@ -6,7 +6,7 @@
 #include "assert.h"
 
 __global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue *q,Vertex *target, int slidesCount,
-                                int slidesCountSqrt) {
+                                int slidesCountSqrt, int* end) {
     int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
     for(int i=id;i < THREADS_COUNT * MAX_S_SIZE;i+=THREADS_COUNT) {
         if (t[i].f != -1) {
@@ -24,7 +24,10 @@ __global__ void insertNewStates(HashMap *h, State *t, int *sSize, PriorityQueue 
                         break;
                     }
                 }
-                assert(j != H_SIZE -1);
+                if (j == H_SIZE - 1) {
+                    *end = 1;
+                    return;
+                }
             }
         }
     }

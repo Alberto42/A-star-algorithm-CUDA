@@ -1,7 +1,7 @@
 import sys
 import numpy as np
 
-N = 4
+N = 3
 
 def f(n):
     if n == 0:

@@ -109,7 +109,7 @@ void main2(int argc, const char *argv[]) {
 
     State m(INF), qiCandidates[Q_CANDIDATES_COUNT];
     PriorityQueue q;
-    int sSize[THREADS_COUNT], qiCandidatesCount=0;
+    int sSize[THREADS_COUNT], qiCandidatesCount=0, end=0;
     State startState = State(0, f(start, target, slidesCount, slidesCountSqrt), start);
     q.insert(startState);
     for(int i=0;i<THREADS_COUNT;i++) {
@@ -121,7 +121,7 @@ void main2(int argc, const char *argv[]) {
     PriorityQueue *devQ;
     HashMap *devH;
     HashMapDeduplicate *devHD;
-    int *devSSize, *devIsTheEnd, *devIsNotEmptyQueue, *devQiCandidatesCount, *devPathSize;
+    int *devSSize, *devIsTheEnd, *devIsNotEmptyQueue, *devQiCandidatesCount, *devPathSize, *devEnd;
 
     gpuErrchk(cudaSetDevice(result.device));
     gpuErrchk(cudaMalloc(&devStart, sizeof(Vertex)));
@@ -138,6 +138,7 @@ void main2(int argc, const char *argv[]) {
     gpuErrchk(cudaMalloc(&devH, sizeof(HashMap)));
     gpuErrchk(cudaMalloc(&devHD, sizeof(HashMapDeduplicate)));
     gpuErrchk(cudaMalloc(&devPathSize, sizeof(int)));
+    gpuErrchk(cudaMalloc(&devEnd, sizeof(int)));
 
     gpuErrchk(cudaMemcpy(devStart, &start, sizeof(Vertex), cudaMemcpyHostToDevice));
     gpuErrchk(cudaMemcpy(devTarget, &target, sizeof(Vertex), cudaMemcpyHostToDevice));
@@ -145,6 +146,7 @@ void main2(int argc, const char *argv[]) {
     gpuErrchk(cudaMemcpy(devQ, &q, sizeof(PriorityQueue), cudaMemcpyHostToDevice));
     gpuErrchk(cudaMemcpy(devSSize, sSize, sizeof(int) * THREADS_COUNT, cudaMemcpyHostToDevice));
     gpuErrchk(cudaMemcpy(devQiCandidatesCount, &qiCandidatesCount, sizeof(int), cudaMemcpyHostToDevice));
+    gpuErrchk(cudaMemcpy(devEnd, &end, sizeof(int), cudaMemcpyHostToDevice));
 
     createHashmapKernel <<< BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >>> (devH, devStart, devTarget, slidesCount, slidesCountSqrt);
 
@@ -172,7 +174,10 @@ void main2(int argc, const char *argv[]) {
         removeUselessStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devT, devSSize, slidesCount);
 
         insertNewStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devT, devSSize, devQ, devTarget,slidesCount,
-                slidesCountSqrt);
+                slidesCountSqrt, devEnd);
+        gpuErrchk(cudaMemcpy(&end, devEnd, sizeof(int), cudaMemcpyDeviceToHost));
+        if (end == 1)
+            break;
     }
 
     gpuErrchk(cudaEventRecord(stop_t, 0));
@@ -214,6 +219,7 @@ void main2(int argc, const char *argv[]) {
     gpuErrchk(cudaFree(devQiCandidates));
     gpuErrchk(cudaFree(devQiCandidatesCount));
     gpuErrchk(cudaFree(devPathSize));
+    gpuErrchk(cudaFree(devEnd));
 }
 
 int main(int argc, const char *argv[]) {
