@@ -2,7 +2,7 @@
 
 for filename in slides/*.in; do
     echo "filename: ***************** $filename"
-    ./runOnDifferentNumberOfThreads.sh "$filename"
+    runOnDifferentNumberOfThreads.sh "$filename"
     echo "filename end: ***************** $filename"
 
 done
