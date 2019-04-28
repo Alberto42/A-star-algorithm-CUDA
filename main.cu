@@ -208,12 +208,14 @@ void main2(int argc, const char *argv[]) {
     gpuErrchk(cudaFree(devM));
     gpuErrchk(cudaFree(devQ));
     gpuErrchk(cudaFree(devS));
+    gpuErrchk(cudaFree(devT));
     gpuErrchk(cudaFree(devSSize));
     gpuErrchk(cudaFree(devIsTheEnd));
+    gpuErrchk(cudaFree(devIsNotEmptyQueue));
+    gpuErrchk(cudaFree(devQiCandidatesCount));
+    gpuErrchk(cudaFree(devQiCandidates));
     gpuErrchk(cudaFree(devH));
     gpuErrchk(cudaFree(devHD));
-    gpuErrchk(cudaFree(devQiCandidates));
-    gpuErrchk(cudaFree(devQiCandidatesCount));
     gpuErrchk(cudaFree(devPathSize));
     gpuErrchk(cudaFree(devEnd));
 }
