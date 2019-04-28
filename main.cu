@@ -17,11 +17,10 @@ namespace po = boost::program_options;
 using namespace std;
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
-inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
-{
-    if (code != cudaSuccess)
-    {
-        fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true) {
+    if (code != cudaSuccess) {
+        fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
         if (abort) exit(code);
     }
 }
@@ -105,10 +104,10 @@ void main2(int argc, const char *argv[]) {
 
     State m(INF), qiCandidates[Q_CANDIDATES_COUNT];
     PriorityQueue q;
-    int sSize[THREADS_COUNT], qiCandidatesCount=0, end=0;
+    int sSize[THREADS_COUNT], qiCandidatesCount = 0, end = 0;
     State startState = State(0, f(start, target, slidesCount, slidesCountSqrt), start);
     q.insert(startState);
-    for(int i=0;i<THREADS_COUNT;i++) {
+    for (int i = 0; i < THREADS_COUNT; i++) {
         sSize[i] = 0;
     }
 
@@ -122,11 +121,11 @@ void main2(int argc, const char *argv[]) {
     gpuErrchk(cudaSetDevice(result.device));
     gpuErrchk(cudaMalloc(&devStart, sizeof(Vertex)));
     gpuErrchk(cudaMalloc(&devTarget, sizeof(Vertex)));
-    gpuErrchk(cudaMalloc(&devM,sizeof(State)));
-    gpuErrchk(cudaMalloc(&devQ,sizeof(PriorityQueue) * THREADS_COUNT));
-    gpuErrchk(cudaMalloc(&devS,sizeof(State) * THREADS_COUNT * MAX_S_SIZE));
-    gpuErrchk(cudaMalloc(&devT,sizeof(State) * THREADS_COUNT * MAX_S_SIZE));
-    gpuErrchk(cudaMalloc(&devSSize,sizeof(int) * THREADS_COUNT));
+    gpuErrchk(cudaMalloc(&devM, sizeof(State)));
+    gpuErrchk(cudaMalloc(&devQ, sizeof(PriorityQueue) * THREADS_COUNT));
+    gpuErrchk(cudaMalloc(&devS, sizeof(State) * THREADS_COUNT * MAX_S_SIZE));
+    gpuErrchk(cudaMalloc(&devT, sizeof(State) * THREADS_COUNT * MAX_S_SIZE));
+    gpuErrchk(cudaMalloc(&devSSize, sizeof(int) * THREADS_COUNT));
     gpuErrchk(cudaMalloc(&devIsTheEnd, sizeof(int)));
     gpuErrchk(cudaMalloc(&devIsNotEmptyQueue, sizeof(int)));
     gpuErrchk(cudaMalloc(&devQiCandidatesCount, sizeof(int)));
@@ -144,33 +143,35 @@ void main2(int argc, const char *argv[]) {
     gpuErrchk(cudaMemcpy(devQiCandidatesCount, &qiCandidatesCount, sizeof(int), cudaMemcpyHostToDevice));
     gpuErrchk(cudaMemcpy(devEnd, &end, sizeof(int), cudaMemcpyHostToDevice));
 
-    createHashmapKernel <<< BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >>> (devH, devStart, devTarget, slidesCount, slidesCountSqrt);
+    createHashmapKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> >
+                                           (devH, devStart, devTarget, slidesCount, slidesCountSqrt);
 
     cudaEvent_t start_t, stop_t;
     gpuErrchk(cudaEventCreate(&start_t));
     gpuErrchk(cudaEventCreate(&stop_t));
     gpuErrchk(cudaEventRecord(start_t, 0));
 
-    while(true) {
-        int isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
+    while (true) {
+        int isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ, devIsNotEmptyQueue);
         if (!isNotEmptyQueue)
             break;
 
         expandKernel << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devStart, devTarget, devM, devQ, devS, devSSize,
                 devQiCandidates, devQiCandidatesCount, slidesCount, slidesCountSqrt);
-        improveMKernel <<< 1, 1 >>> (devM,devQiCandidates, devQiCandidatesCount);
+        improveMKernel << < 1, 1 >> > (devM, devQiCandidates, devQiCandidatesCount);
 
-        isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ,devIsNotEmptyQueue);
+        isNotEmptyQueue = checkExistanceOfNotEmptyQueueHost(devQ, devIsNotEmptyQueue);
         int isTheEnd = checkIfTheEndKernelHost(devM, devQ, devIsTheEnd);
         if (isTheEnd && isNotEmptyQueue)
             break;
 
-        deduplicateKernelHost(devS,devSSize, devT, devHD, slidesCount);
+        deduplicateKernelHost(devS, devSSize, devT, devHD, slidesCount);
 
-        removeUselessStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devT, devSSize, slidesCount);
+        removeUselessStates << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> > (devH, devT, devSSize, slidesCount);
 
-        insertNewStates <<<BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT>>>(devH, devT, devSSize, devQ, devTarget,slidesCount,
-                slidesCountSqrt, devEnd);
+        insertNewStates << < BLOCKS_COUNT, THREADS_PER_BLOCK_COUNT >> >
+                                           (devH, devT, devSSize, devQ, devTarget, slidesCount,
+                                                   slidesCountSqrt, devEnd);
         gpuErrchk(cudaMemcpy(&end, devEnd, sizeof(int), cudaMemcpyDeviceToHost));
         if (end == 1)
             break;
@@ -186,17 +187,17 @@ void main2(int argc, const char *argv[]) {
 
     result.out << elapsedTime << endl;
     if (m.f != INF) {
-        gpuErrchk(cudaMalloc(&devPath, sizeof(Vertex) * (m.g+10)));
-        getPathKernel <<< 1, 1 >>> (devH, devM, devStart,slidesCount, devPath, devPathSize);
+        gpuErrchk(cudaMalloc(&devPath, sizeof(Vertex) * (m.g + 10)));
+        getPathKernel << < 1, 1 >> > (devH, devM, devStart, slidesCount, devPath, devPathSize);
         int pathSize;
         gpuErrchk(cudaMemcpy(&pathSize, devPathSize, sizeof(int), cudaMemcpyDeviceToHost));
-        Vertex* path = new Vertex[pathSize];
+        Vertex *path = new Vertex[pathSize];
         gpuErrchk(cudaMemcpy(path, devPath, sizeof(Vertex) * pathSize, cudaMemcpyDeviceToHost));
 
-        for(int i=pathSize-1;i>=0;i--)
-            path[i].print(slidesCount,result.out);
+        for (int i = pathSize - 1; i >= 0; i--)
+            path[i].print(slidesCount, result.out);
 
-        delete [] path;
+        delete[] path;
         gpuErrchk(cudaFree(devPath));
     }
 

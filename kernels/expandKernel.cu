@@ -5,7 +5,7 @@
 
 __device__ __host__ bool vertexEqual(const Vertex &a, const Vertex &b,const int &slidesCount);
 
-__device__ void expand(const State qi, State s[], int &sSize, const Vertex &target,int slidesCount, int
+__device__ void expand(const State qi, State s[], int &sSize, const Vertex &target, int slidesCount, int
 slidesCountSqrt) {
     int moves[] = {-1, 1, -slidesCountSqrt, slidesCountSqrt};
     const int movesCount = 4;
@@ -38,23 +38,23 @@ slidesCountSqrt) {
     }
 }
 
-__global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQueue *q, State *s, int *sSize,State
+__global__ void expandKernel(Vertex *start, Vertex *target, State *m, PriorityQueue *q, State *s, int *sSize, State
 *qiCandidates, int *qiCandidatesCount, int slidesCount, int slidesCountSqrt) {
 
     int id = threadIdx.x + blockIdx.x * THREADS_PER_BLOCK_COUNT;
     sSize[id] = 0;
-    for(int i=id*MAX_S_SIZE;i<(id+1)*MAX_S_SIZE;i++)
+    for (int i = id * MAX_S_SIZE; i < (id + 1) * MAX_S_SIZE; i++)
         s[i].f = -1;
     if (q[id].empty()) {
         return;
     }
     State qi = q[id].pop();
 
-    if (vertexEqual(qi.node,*target,slidesCount) ) {
+    if (vertexEqual(qi.node, *target, slidesCount)) {
         if (qi.f < m->f) {
             int tmp = atomicAdd(qiCandidatesCount, 1);
             qiCandidates[tmp] = qi;
         }
     } else
-        expand(qi, s + (id*MAX_S_SIZE), sSize[id], *target, slidesCount, slidesCountSqrt);
+        expand(qi, s + (id * MAX_S_SIZE), sSize[id], *target, slidesCount, slidesCountSqrt);
 }
